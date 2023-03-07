@@ -1,0 +1,58 @@
+{
+  "name": "draw",
+  "version": "1.0.0",
+  "description": "VC Map plugin for drawing and editing 2D an 3D geometries in the map.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "prepublishOnly": "vcmplugin build",
+    "build": "vcmplugin build",
+    "pack": "vcmplugin pack",
+    "start": "vcmplugin serve",
+    "preview": "vcmplugin preview",
+    "buildStagingApp": "vcmplugin buildStagingApp",
+    "lint": "eslint \"{src,tests}/**/*.{js,vue}\"",
+    "test": "vitest",
+    "coverage": "vitest run --coverage"
+  },
+  "author": "Virtual City Systems",
+  "license": "MIT",
+  "keywords": [
+    "vcmap",
+    "plugin"
+  ],
+  "files": [
+    "src/",
+    "dist/",
+    "plugin-assets/",
+    "LICENSE.md",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./src/index.js",
+    "./dist": "./dist/index.js"
+  },
+  "eslintIgnore": [
+    "node_modules"
+  ],
+  "eslintConfig": {
+    "root": true,
+    "extends": "@vcsuite/eslint-config/vue"
+  },
+  "peerDependencies": {
+    "@vcmap-cesium/engine": "~1.1.2",
+    "@vcmap/core": "git+ssh://git@gitlab.virtualcitysystems.de/vcsuite/npm/vcmap/core.git#feature-editorChanges",
+    "@vcmap/ui": "^5.0.0-rc.22",
+    "ol": "~7.2.2",
+    "vue": "~2.7.3",
+    "vuetify": "~2.6.7"
+  },
+  "devDependencies": {
+    "@vcmap/plugin-cli": "^2.1.4",
+    "@vcsuite/eslint-config": "^2.1.1",
+    "@vitest/coverage-c8": "^0.29.2",
+    "jest-canvas-mock": "^2.4.0",
+    "jsdom": "^21.1.0",
+    "vitest": "^0.29.2"
+  }
+}
