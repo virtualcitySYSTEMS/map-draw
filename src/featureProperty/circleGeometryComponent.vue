@@ -1,19 +1,27 @@
 <template>
-  <div class="pa-2" v-if="center">
-    <CoordinateInput
-      v-model="center"
-    />
+  <div v-if="center" class="px-1">
+    <CoordinateInput v-model="center" :wgs84="isWgs84" />
     <VcsTextField
+      id="drawing-radius-input"
+      type="number"
+      unit="m"
+      prepend-icon="mdi-radius-outline"
       v-model.number="radius"
-      label="Radius"
-      dense
+      @change="handleRadiusInput()"
+    />
+    <VcsSelect
+      v-model="isWgs84"
+      :items="[
+        { value: true, text: 'EPSG: 4326' },
+        { value: false, text: 'EPSG: 3857' },
+      ]"
     />
   </div>
 </template>
 
 <script>
   import { computed, inject, onUnmounted, ref, watch } from 'vue';
-  import { VcsTextField } from '@vcmap/ui';
+  import { VcsTextField, VcsSelect } from '@vcmap/ui';
   import { unByKey } from 'ol/Observable.js';
   import CoordinateInput from './coordinateInput.vue';
 
@@ -21,23 +29,24 @@
     name: 'CircleGeometryComponent',
     components: {
       VcsTextField,
+      VcsSelect,
       CoordinateInput,
     },
     setup() {
       const features = inject('features');
-      const radiusRef = ref(null);
-      const center = ref(null);
+      const radius = ref();
+      const center = ref();
       let featureListener = () => {};
 
-      const setupFeature = (feature) => {
+      function setupFeature(feature) {
         featureListener();
         if (feature) {
           const geometry = feature.getGeometry();
-          radiusRef.value = geometry.getRadius();
+          radius.value = geometry.getRadius();
           center.value = geometry.getCenter();
 
           const changedListener = geometry.on('change', () => {
-            radiusRef.value = geometry.getRadius();
+            radius.value = geometry.getRadius();
             center.value = geometry.getCenter();
           });
 
@@ -45,7 +54,7 @@
             unByKey(changedListener);
           };
         }
-      };
+      }
 
       const watcher = watch(features, () => {
         setupFeature(features.value[0]);
@@ -58,25 +67,30 @@
       });
 
       return {
-        radius: computed({
-          get() { return radiusRef.value; },
-          set(radius) {
-            if (Number.isFinite(radius)) {
-              features.value[0].getGeometry().setRadius(radius);
-            }
-          },
-        }),
         center: computed({
-          get() { return center.value; },
+          get() {
+            return center.value;
+          },
           set(newCenter) {
             features.value[0].getGeometry().setCenter(newCenter);
           },
         }),
+        handleRadiusInput() {
+          if (Number.isFinite(radius.value)) {
+            features.value[0].getGeometry().setRadius(radius.value);
+          }
+        },
+        radius,
+        isWgs84: ref(false),
       };
     },
   };
 </script>
 
 <style scoped>
-
+  #drawing-radius-input {
+    width: 37%;
+    left: 63%;
+    position: relative;
+  }
 </style>

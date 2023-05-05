@@ -1,69 +1,47 @@
 <template>
-  <v-sheet>
-    <v-row>
-      <v-col
-        cols="12"
-        sm="8"
-      >
-        {{ $t(label) }}
-      </v-col>
-      <v-col
-        cols="12"
-        sm="4"
-      >
-        <v-switch v-model="wgs84" label="WGS 84" small />
-      </v-col>
-    </v-row>
-    <v-row>
-      <v-col
-        cols="12"
-        sm="4"
-      >
+  <v-container class="px-0 py-0">
+    <v-row no-gutters>
+      <v-col cols="4">
         <VcsTextField
+          type="number"
           v-model.number="x"
           :tooltip-position="'bottom'"
-          label="X"
+          prefix="X"
           dense
           @change="onInput"
         />
       </v-col>
-      <v-col
-        cols="12"
-        sm="4"
-      >
+      <v-col cols="4">
         <VcsTextField
+          type="number"
           v-model.number="y"
           :tooltip-position="'bottom'"
-          label="Y"
-          dense
+          prefix="Y"
           @change="onInput"
         />
       </v-col>
-      <v-col
-        cols="12"
-        sm="4"
-      >
+      <v-col cols="4">
         <VcsTextField
+          type="number"
           v-model.number="z"
           :tooltip-position="'bottom'"
-          label="Z"
-          dense
+          prefix="Z"
           @change="onInput"
         />
       </v-col>
     </v-row>
-  </v-sheet>
+  </v-container>
 </template>
 
 <script>
-  import { VRow, VCol, VSwitch, VSheet } from 'vuetify/lib';
-  import { computed, ref, watch } from 'vue';
+  import { VRow, VCol, VContainer } from 'vuetify/lib';
+  import { ref, watch } from 'vue';
   import { Projection } from '@vcmap/core';
   import { VcsTextField } from '@vcmap/ui';
 
   export default {
     name: 'CoordinateInput',
-    components: { VcsTextField, VRow, VCol, VSwitch, VSheet },
+    components: { VcsTextField, VRow, VCol, VContainer },
     props: {
       value: {
         type: Array,
@@ -73,17 +51,20 @@
         type: String,
         default: 'Position', // TODO i18n
       },
+      wgs84: {
+        type: Boolean,
+        default: false,
+      },
     },
     setup(props, { emit }) {
-      const wgs84 = ref(false);
       const x = ref(0);
       const y = ref(0);
       const z = ref(0);
       let currentCoords = [0, 0, 0];
 
-      const setFromProps = () => {
+      function setFromProps() {
         if (currentCoords.some((c, index) => c !== props.value[index])) {
-          if (wgs84.value) {
+          if (props.wgs84) {
             const wgs84Coords = Projection.mercatorToWgs84(props.value);
             x.value = wgs84Coords[0];
             y.value = wgs84Coords[1];
@@ -95,14 +76,17 @@
           }
           currentCoords = props.value.slice();
         }
-      };
-      watch(props, setFromProps);
+      }
+      watch(props, () => {
+        currentCoords = [0, 0, 0];
+        setFromProps();
+      });
       setFromProps();
 
       const onInput = () => {
         const coords = [x.value, y.value, z.value];
-        if (coords.every(c => Number.isFinite(c))) {
-          if (wgs84.value) {
+        if (coords.every((c) => Number.isFinite(c))) {
+          if (props.wgs84) {
             emit('input', Projection.wgs84ToMercator(coords));
           } else {
             emit('input', coords);
@@ -115,16 +99,6 @@
         y,
         z,
         onInput,
-        wgs84: computed({
-          get() {
-            return wgs84.value;
-          },
-          set(value) {
-            wgs84.value = value;
-            currentCoords = [0, 0, 0];
-            setFromProps();
-          },
-        }),
       };
     },
   };

@@ -1,31 +1,40 @@
+import { watch, shallowRef, computed } from 'vue';
 import {
-  CesiumMap,
   GeometryType,
+  SelectionMode,
   startCreateFeatureSession,
   startEditFeaturesSession,
   startEditGeometrySession,
-  TransformationMode,
+  startSelectFeaturesSession,
   SessionType,
   VectorLayer,
   mercatorProjection,
   markVolatile,
   maxZIndex,
+  vcsLayerName,
 } from '@vcmap/core';
 import { ToolboxType, WindowSlot } from '@vcmap/ui';
-import { watch, shallowRef } from 'vue';
+import { Feature } from 'ol';
+import { LineString, Point, Polygon } from 'ol/geom';
 import { name } from '../package.json';
-import FeaturePropertyWindow from './featureProperty/featuresPropertyWindow.vue';
+import FeaturePropertyWindow, {
+  TransformationIcons,
+  getAllowedTransformationModes,
+} from './featureProperty/featuresPropertyWindow.vue';
 
 /**
  * @typedef {Object} EditorManager
  * @property {import("vue").ShallowRef<null|import("@vcmap/core").EditorSession>} currentSession
+ * @property {import("vue").ShallowRef<null|import("@vcmap/core").EditorSession>} currentEditSession
  * @property {import("vue").ShallowRef<Array<import("ol").Feature>>} currentFeatures
  * @property {import("vue").ShallowRef<import("@vcmap/core").VectorLayer>} currentLayer
- * @property {function(import("@vcmap/core").GeometryType):import("@vcmap/core").EditorSession} startCreateSession
- * @property {function(import("ol").Feature=):import("@vcmap/core").EditorSession} startEditSession - optional feature to select
- * @property {function(import("@vcmap/core").TransformationMode):import("@vcmap/core").EditorSession} startTransformSession
+ * @property {function(import("@vcmap/core").GeometryType):void} startCreateSession
+ * @property {function(import("ol").Feature[]=):void} startSelectSession - optional features to select
+ * @property {function(import("ol").Feature=):void} startEditSession - optional feature to select
+ * @property {function(import("@vcmap/core").TransformationMode):void} startTransformSession
  * @property {function():import("@vcmap/core").VectorLayer} getDefaultLayer
  * @property {function():void} stop
+ * @property {function():void} stopEditing
  * @property {function():void} destroy
  */
 
@@ -42,6 +51,8 @@ export const GeometryTypeIcon = {
   [GeometryType.BBox]: '$vcsBoundingBox',
   [GeometryType.Circle]: '$vcsCircle',
 };
+
+export const selectInteractionId = 'select_interaction_id';
 
 /**
  * @param {import("@vcmap/ui").VcsUiApp} app
@@ -62,42 +73,72 @@ function createSimpleEditorLayer(app) {
 /**
  * @param {import("@vcmap/core").EditorSession} session
  * @param {import("vue").ShallowRef<Array<import("ol").Feature>>} currentFeatures
- * @param {boolean} setTitle
+ * @param {import("ol").Feature} templateFeature
  * @returns {function():void}
  */
-function setupFeaturesChangedListener(session, currentFeatures) {
-  if (session.type === SessionType.EDIT_FEATURES) {
-    return session.featureSelection.featuresChanged.addEventListener((newFeatures) => {
-      currentFeatures.value = newFeatures;
-    });
-  }
-
-  if (session.type === SessionType.EDIT_GEOMETRY) {
-    return session.featureSelection.featureChanged.addEventListener((newFeature) => {
-      if (newFeature) {
-        currentFeatures.value = [newFeature];
-      } else {
-        currentFeatures.value = [];
-      }
-    });
+function setupSessionListener(session, currentFeatures, templateFeature) {
+  const listeners = [];
+  if (session.type === SessionType.SELECT) {
+    listeners.push(
+      session.featuresChanged.addEventListener((newFeatures) => {
+        currentFeatures.value = newFeatures;
+      }),
+    );
   }
 
   if (session.type === SessionType.CREATE) {
-    const createdListener = session.featureCreated.addEventListener((newFeature) => {
-      currentFeatures.value = [newFeature];
-    });
+    listeners.push(
+      session.featureCreated.addEventListener((newFeature) => {
+        currentFeatures.value = [newFeature];
+        const style = templateFeature.getStyle()?.clone();
+        const properties = templateFeature.getProperties();
+        delete properties.geometry; // delete geomertry from template properties
+        if (style) {
+          currentFeatures.value[0].setStyle(style);
+        }
+        if (Object.keys(properties).length) {
+          currentFeatures.value[0].setProperties(properties);
+        }
+      }),
+    );
 
-    const finishedListener = session.creationFinished.addEventListener(() => {
-      currentFeatures.value = [];
-    });
-
-    return () => {
-      createdListener();
-      finishedListener();
-    };
+    listeners.push(
+      session.creationFinished.addEventListener(() => {
+        currentFeatures.value = [templateFeature];
+      }),
+    );
   }
 
-  return () => {};
+  return () => {
+    listeners.forEach((l) => l());
+  };
+}
+
+/**
+ * Creates listeners that listen to select session changes and apply these to the edit sessions.
+ * @param {import("@vcmap/core").SelectFeaturesSession} selectSession
+ * @param {import("@vcmap/core").EditFeaturesSession | import("@vcmap/core").EditGeometrySession} editSession
+ * @returns {function():void} Remove listeners
+ */
+function setupEditSessionListeners(selectSession, editSession) {
+  let updateFeatures;
+  if (editSession.type === SessionType.EDIT_FEATURES) {
+    updateFeatures = (newFeatures) => {
+      editSession.setFeatures(newFeatures);
+    };
+  } else if (editSession.type === SessionType.EDIT_GEOMETRY) {
+    updateFeatures = (newFeatures) => {
+      editSession.setFeature(newFeatures[0]);
+    };
+  }
+  const featuresChangesListener =
+    selectSession.featuresChanged.addEventListener(updateFeatures);
+  const stopListener = selectSession.stopped.addEventListener(editSession.stop);
+
+  return () => {
+    featuresChangesListener();
+    stopListener();
+  };
 }
 
 /**
@@ -105,33 +146,84 @@ function setupFeaturesChangedListener(session, currentFeatures) {
  * @returns {EditorManager}
  */
 export function createSimpleEditorManager(app) {
+  /** @type {import('vue').ShallowRef<import('@vcmap/core').EditorSession | null>} */
   const currentSession = shallowRef(null);
+  /** @type {import('vue').ShallowRef<import('@vcmap/core').EditorSession | null>} */
+  const currentEditSession = shallowRef(null);
   const currentFeatures = shallowRef();
+  let templateFeature;
   const layer = createSimpleEditorLayer(app);
   const currentLayer = shallowRef(layer);
-  let stoppedListener = () => {};
-  let featuresChangedListener = () => {};
+  let sessionListener = () => {};
+  let editSessionListener = () => {};
+  let sessionStoppedListener = () => {};
+  let editSessionStoppedListener = () => {};
 
-  const setCurrentSession = (newSession) => {
-    stoppedListener();
-    featuresChangedListener();
+  /**
+   * Stops running sessions and starts a new one.
+   * @param {import('@vcmap/core').EditorSession | null} newSession The new editor session to be started.
+   */
+  function setCurrentSession(newSession) {
+    sessionStoppedListener();
+    sessionListener();
     currentFeatures.value = [];
     currentSession.value?.stop?.();
+
     currentSession.value = newSession;
     if (currentSession.value) {
-      stoppedListener = currentSession.value.stopped.addEventListener(() => {
-        setCurrentSession(null);
-      });
+      sessionStoppedListener =
+        currentSession.value.stopped.addEventListener(setCurrentSession);
 
-      featuresChangedListener = setupFeaturesChangedListener(
+      sessionListener = setupSessionListener(
         currentSession.value,
         currentFeatures,
+        templateFeature,
       );
     } else {
-      stoppedListener = () => {};
-      featuresChangedListener = () => {};
+      sessionStoppedListener = () => {};
+      sessionListener = () => {};
     }
-  };
+  }
+
+  /**
+   * Sets a new edit sesstion (either features or geometry) and makes sure that the current edit session is stopped and there is a selection session running.
+   * @param {import("@vcmap/core").EditFeaturesSession | import("@vcmap/core").EditGeometrySession | null} newSession
+   */
+  function setCurrentEditSession(newSession) {
+    editSessionStoppedListener();
+    editSessionListener();
+    currentEditSession.value?.stop?.();
+    currentEditSession.value = newSession;
+    if (newSession) {
+      const selectionMode =
+        newSession.type === SessionType.EDIT_GEOMETRY
+          ? SelectionMode.SINGLE
+          : SelectionMode.MULTI;
+      if (!(currentSession.value?.type === SessionType.SELECT)) {
+        setCurrentSession(
+          startSelectFeaturesSession(
+            app,
+            currentLayer.value,
+            selectInteractionId,
+            selectionMode,
+          ),
+        );
+      } else {
+        currentSession.value.setMode(selectionMode);
+      }
+      editSessionStoppedListener =
+        currentEditSession.value.stopped.addEventListener(
+          setCurrentEditSession,
+        );
+      editSessionListener = setupEditSessionListeners(
+        currentSession.value,
+        currentEditSession.value,
+      );
+    } else {
+      editSessionStoppedListener = () => {};
+      editSessionListener = () => {};
+    }
+  }
 
   const layerWatcher = watch(currentLayer, () => {
     setCurrentSession(null);
@@ -142,26 +234,96 @@ export function createSimpleEditorManager(app) {
 
   return {
     currentSession,
+    currentEditSession,
     currentFeatures,
     currentLayer,
     startCreateSession(geometryType) {
-      setCurrentSession(startCreateFeatureSession(app, currentLayer.value, geometryType));
+      if (
+        !templateFeature?.getGeometry() ||
+        geometryType !== templateFeature.getGeometry()?.getType()
+      ) {
+        let geometry;
+        let id;
+        // create dummy geomtery. Template feature must have geometry, otherwise property components can not recognize what type of feature will be drawn next.
+        // alternative would be to pass through the geometry type (in e.g. styleComponent), but might be more errorprone and complex
+        switch (geometryType) {
+          case GeometryType.Point:
+            geometry = new Point([]);
+            id = `drawing.create.${geometryType}`;
+            break;
+          case GeometryType.LineString:
+            geometry = new LineString([]);
+            id = `drawing.create.${geometryType}`;
+            break;
+          default:
+            geometry = new Polygon([]);
+            id = `drawing.create.${geometryType}`;
+            break;
+        }
+        templateFeature = new Feature({ geometry });
+        templateFeature.setId(id);
+      }
+      setCurrentSession(
+        startCreateFeatureSession(app, currentLayer.value, geometryType),
+      );
+      currentFeatures.value = [templateFeature];
     },
-    startEditSession(feature) {
-      setCurrentSession(startEditGeometrySession(app, currentLayer.value));
-      if (feature) {
-        currentSession.value.featureSelection.selectFeature(feature);
+    startSelectSession(features) {
+      setCurrentSession(
+        startSelectFeaturesSession(
+          app,
+          currentLayer.value,
+          selectInteractionId,
+        ),
+      );
+      if (features) {
+        currentSession.value?.setCurrentFeatures(features);
       }
     },
-    startTransformSession(mode) {
-      if (currentSession.value?.type === SessionType.EDIT_FEATURES) {
-        currentSession.value.setMode(mode);
+    startEditSession(feature) {
+      setCurrentEditSession(
+        startEditGeometrySession(app, currentLayer.value, selectInteractionId),
+      );
+      if (feature) {
+        // set the feature at the selectFeatureSession
+        currentSession.value?.setCurrentFeatures(feature);
       } else {
-        setCurrentSession(startEditFeaturesSession(app, currentLayer.value, mode));
+        currentEditSession.value?.setFeature(
+          currentSession.value?.firstFeature,
+        );
+      }
+    },
+    startTransformSession(mode, features) {
+      if (currentEditSession.value?.type === SessionType.EDIT_FEATURES) {
+        currentEditSession.value.setMode(mode);
+      } else {
+        setCurrentEditSession(
+          startEditFeaturesSession(
+            app,
+            currentLayer.value,
+            selectInteractionId,
+            mode,
+          ),
+        );
+      }
+      if (features) {
+        // set the feature at the selectFeatureSession
+        currentSession.value?.setCurrentFeatures(features);
+      } else {
+        currentEditSession.value?.setFeatures(
+          currentSession.value?.currentFeatures,
+        );
       }
     },
     stop() {
       setCurrentSession(null);
+      setCurrentEditSession(null);
+    },
+    stopEditing() {
+      setCurrentEditSession(null);
+      if (currentSession?.value.type === SessionType.SELECT) {
+        currentSession.value.setMode(SelectionMode.MULTI);
+      }
     },
     getDefaultLayer() {
       return layer;
@@ -177,103 +339,10 @@ export function createSimpleEditorManager(app) {
 
 /**
  * @param {EditorManager} manager
- * @param {import("@vcmap/ui").VcsUiApp} app
- * @returns {EditorToolbox}
- */
-function createTransformationToolbox(manager, app) {
-  const tools = [
-    {
-      name: TransformationMode.SELECT,
-      icon: '$vcsPointSelect',
-      title: `drawing.transform.${TransformationMode.SELECT}`,
-    },
-    {
-      name: TransformationMode.TRANSLATE,
-      icon: 'mdi-axis-arrow',
-      title: `drawing.transform.${TransformationMode.TRANSLATE}`,
-    },
-    {
-      name: TransformationMode.ROTATE,
-      icon: 'mdi-rotate-3d-variant',
-      title: `drawing.transform.${TransformationMode.ROTATE}`,
-    },
-    {
-      name: TransformationMode.SCALE,
-      icon: 'mdi-arrow-top-right-bottom-left',
-      title: `drawing.transform.${TransformationMode.SCALE}`,
-    },
-  ];
-  const handleMapChanged = (map) => {
-    if (map instanceof CesiumMap && !tools.some(t => t.name === TransformationMode.EXTRUDE)) {
-      tools.push({
-        name: TransformationMode.EXTRUDE,
-        icon: '$vcsWall',
-        title: `drawing.transform.${TransformationMode.EXTRUDE}`,
-      });
-    } else {
-      const index = tools.findIndex(t => t.name === TransformationMode.EXTRUDE);
-      if (index > -1) {
-        tools.splice(index, 1);
-      }
-    }
-  };
-  handleMapChanged(app.maps.activeMap);
-  const mapActivatedListener = app.maps.mapActivated.addEventListener(handleMapChanged);
-
-  const toolbox = {
-    type: ToolboxType.SELECT,
-    action: {
-      name: 'transformation',
-      currentIndex: 0,
-      active: false,
-      callback() {
-        if (this.active && manager.currentSession.value) {
-          manager.stop();
-        } else {
-          manager.startTransformSession(tools[this.currentIndex].name);
-        }
-      },
-      selected(newIndex) {
-        this.currentIndex = newIndex;
-        manager.startTransformSession(tools[this.currentIndex].name);
-      },
-      tools,
-    },
-  };
-
-  const setIndexFromMode = (mode) => {
-    const index = toolbox.action.tools.findIndex(t => t.name === mode);
-    if (toolbox.action.currentIndex !== index) {
-      toolbox.action.currentIndex = index;
-    }
-  };
-
-  let modeListener = () => {};
-  const sessionWatcher = watch(manager.currentSession, () => {
-    toolbox.action.active = manager.currentSession.value?.type === SessionType.EDIT_FEATURES;
-    modeListener();
-    if (toolbox.action.active) {
-      modeListener = manager.currentSession.value.modeChanged.addEventListener(setIndexFromMode);
-      setIndexFromMode(manager.currentSession.value.mode);
-    }
-  });
-
-  return {
-    toolbox,
-    destroy() {
-      mapActivatedListener();
-      sessionWatcher();
-      modeListener();
-    },
-  };
-}
-
-/**
- * @param {EditorManager} manager
  * @returns {EditorToolbox}
  */
 function createCreateToolbox(manager) {
-  const createCreateButton = geometryType => ({
+  const createCreateButton = (geometryType) => ({
     name: geometryType,
     title: `drawing.create.${geometryType}`,
     icon: GeometryTypeIcon[geometryType],
@@ -283,22 +352,37 @@ function createCreateToolbox(manager) {
     type: ToolboxType.SELECT,
     action: {
       name: 'creation',
-      currentIndex: 0,
+      currentIndex: 1,
       active: false,
       callback() {
         if (this.active) {
           manager.stop();
         } else {
-          manager.startCreateSession(this.tools[this.currentIndex].name);
+          const toolName = this.tools[this.currentIndex].name;
+          if (toolName === SessionType.SELECT) {
+            manager.startSelectSession();
+          } else {
+            manager.startCreateSession(toolName);
+          }
         }
       },
       selected(newIndex) {
         if (newIndex !== this.currentIndex) {
           this.currentIndex = newIndex;
-          manager.startCreateSession(this.tools[this.currentIndex].name);
+          const toolName = this.tools[this.currentIndex].name;
+          if (toolName === SessionType.SELECT) {
+            manager.startSelectSession();
+          } else {
+            manager.startCreateSession(toolName);
+          }
         }
       },
       tools: [
+        {
+          name: SessionType.SELECT,
+          icon: '$vcsPointSelect',
+          title: 'drawing.select',
+        },
         createCreateButton(GeometryType.Polygon),
         createCreateButton(GeometryType.Point),
         createCreateButton(GeometryType.LineString),
@@ -309,9 +393,14 @@ function createCreateToolbox(manager) {
   };
 
   const destroy = watch(manager.currentSession, () => {
-    toolbox.action.active = manager.currentSession.value?.type === SessionType.CREATE;
+    const currentSession = manager.currentSession.value;
+    toolbox.action.active = !!currentSession;
     if (toolbox.action.active) {
-      const index = toolbox.action.tools.findIndex(t => t.name === manager.currentSession.value.geometryType);
+      const toolName =
+        currentSession?.type === SessionType.CREATE
+          ? currentSession.geometryType
+          : SessionType.SELECT;
+      const index = toolbox.action.tools.findIndex((t) => t.name === toolName);
       if (toolbox.action.currentIndex !== index) {
         toolbox.action.currentIndex = index;
       }
@@ -326,56 +415,17 @@ function createCreateToolbox(manager) {
 
 /**
  * @param {EditorManager} manager
- * @returns {EditorToolbox}
- */
-function createEditToolbox(manager) {
-  const toolbox = {
-    type: ToolboxType.SINGLE,
-    action: {
-      name: 'edit',
-      title: 'edit',
-      icon: '$vcsPen',
-      active: false,
-      callback() {
-        if (this.active && manager.currentSession.value) {
-          manager.stop();
-        } else {
-          manager.startEditSession();
-        }
-      },
-    },
-  };
-
-  const destroy = watch(manager.currentSession, () => {
-    toolbox.action.active = manager.currentSession.value?.type === SessionType.EDIT_GEOMETRY;
-  });
-
-  return {
-    toolbox,
-    destroy,
-  };
-}
-
-/**
- * @param {EditorManager} manager
  * @param {import("@vcmap/ui").VcsUiApp} app
  * @returns {function():void}
  */
 export function addToolButtons(manager, app) {
-  const { toolbox: createToolbox, destroy: destroyCreateToolbox } = createCreateToolbox(manager);
+  const { toolbox: createToolbox, destroy: destroyCreateToolbox } =
+    createCreateToolbox(manager);
   const createId = app.toolboxManager.add(createToolbox, name).id;
-  const { toolbox: editToolbox, destroy: destroyEditToolbox } = createEditToolbox(manager);
-  const editId = app.toolboxManager.add(editToolbox, name).id;
-  const { toolbox: transformToolbox, destroy: destroyTransformToolbox } = createTransformationToolbox(manager, app);
-  const transformId = app.toolboxManager.add(transformToolbox, name).id;
 
   return () => {
     app.toolboxManager.remove(createId);
-    app.toolboxManager.remove(editId);
-    app.toolboxManager.remove(transformId);
     destroyCreateToolbox();
-    destroyEditToolbox();
-    destroyTransformToolbox();
   };
 }
 
@@ -386,17 +436,37 @@ export function addToolButtons(manager, app) {
  */
 export function setupFeaturePropertyWindow(manager, app) {
   const featurePropertyWindowId = 'DrawingFeaturePropertyWindow';
+  const headerTitle = computed(() => {
+    const numberOfFeatures = manager.currentFeatures.value.length;
+    if (numberOfFeatures > 1) {
+      return `(${numberOfFeatures}) Features`;
+    } else if (manager.currentSession.value.type === SessionType.CREATE) {
+      return `drawing.create.${manager.currentSession.value.geometryType}`;
+    } else {
+      return `${manager.currentFeatures.value[0]
+        ?.getId()
+        ?.toString()
+        .slice(0, 19)} ...`;
+    }
+  });
   const toggleWindow = () => {
     if (manager.currentFeatures.value.length > 0) {
       if (!app.windowManager.has(featurePropertyWindowId)) {
-        app.windowManager.add({
-          id: featurePropertyWindowId,
-          component: FeaturePropertyWindow,
-          slot: WindowSlot.DYNAMIC_RIGHT,
-          provides: {
-            manager,
+        app.windowManager.add(
+          {
+            id: featurePropertyWindowId,
+            component: FeaturePropertyWindow,
+            slot: WindowSlot.DYNAMIC_RIGHT,
+            provides: {
+              manager,
+            },
+            state: {
+              headerTitle,
+              styles: { width: '280px', height: 'auto' },
+            },
           },
-        }, name);
+          name,
+        );
       }
     } else {
       app.windowManager.remove(featurePropertyWindowId);
@@ -410,4 +480,57 @@ export function setupFeaturePropertyWindow(manager, app) {
   };
 }
 
-export function addContextMenu(manager, app) {}
+// eslint-disable-next-line no-unused-vars
+/**
+ * Adds edit actions to the context menu.
+ * @param {import("@vcmap/core").VcsApp} app The VcsUiApp instance
+ * @param {EditorManager} manager The editor manager
+ * @param {string | symbol} owner The owner of the context menu entries.
+ * @returns {function():void} Function to remove context menu entries.
+ */
+export function addContextMenu(app, manager, owner) {
+  return app.contextMenuManager.addEventHandler((event) => {
+    const contextEntries = [];
+    if (
+      event.feature &&
+      event.feature[vcsLayerName] === manager.currentLayer.value.name
+    ) {
+      let editFeatures = manager.currentFeatures.value; // TODO: can be replaced when setCurrentFeatures of SelectFeaturesSession returns a promise.
+      if (manager.currentSession.value.type !== SessionType.SELECT) {
+        manager.startSelectSession([event.feature]);
+        editFeatures = [event.feature];
+      } else if (
+        !manager.currentFeatures.value.some(
+          (feature) => feature.getId() === event.feature.getId(),
+        )
+      ) {
+        manager.currentSession.value.setCurrentFeatures([event.feature]);
+        editFeatures = [event.feature];
+      }
+      if (editFeatures.length === 1) {
+        contextEntries.push({
+          id: 'draw-edit_geometry',
+          name: 'drawing.geometry.edit',
+          icon: '$vcsPen',
+          callback() {
+            manager.startEditSession();
+          },
+        });
+      }
+      const allowedModes = getAllowedTransformationModes(editFeatures);
+      allowedModes.forEach((mode) => {
+        contextEntries.push({
+          id: `draw-${mode}`,
+          name: `drawing.transform.${mode}`,
+          icon: TransformationIcons[mode],
+          callback() {
+            manager.startTransformSession(mode);
+          },
+        });
+      });
+    } else {
+      manager.currentSession.value?.clearSelection?.();
+    }
+    return contextEntries;
+  }, owner);
+}

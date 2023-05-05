@@ -1,4 +1,9 @@
-import { Category, mercatorProjection, VectorLayer, writeGeoJSON, } from '@vcmap/core';
+import {
+  Category,
+  mercatorProjection,
+  VectorLayer,
+  writeGeoJSON,
+} from '@vcmap/core';
 import { createModalAction } from '@vcmap/ui';
 import { name } from '../../package.json';
 import RenameDialog from './renameDialog.vue';
@@ -9,7 +14,9 @@ import { downloadText } from '../util/downloadHelper.js';
  * @extends {Category<import("@vcmap/core").VectorLayer>}
  */
 class LayerEditorCategory extends Category {
-  static get className() { return 'LayerEditorCategory'; }
+  static get className() {
+    return 'LayerEditorCategory';
+  }
 
   _itemAdded(layer) {
     if (!this._app.layers.hasKey(layer.name)) {
@@ -31,7 +38,13 @@ export default LayerEditorCategory;
  * @param {Category<VectorLayer>} category
  * @param {VcsListItem} categoryListItem
  */
-function itemMappingFunction(vcsApp, manager, layer, category, categoryListItem) {
+function itemMappingFunction(
+  vcsApp,
+  manager,
+  layer,
+  category,
+  categoryListItem,
+) {
   categoryListItem.title = layer.properties.title ?? 'Unnamed Layer';
 
   let hidden = !(layer.active || layer.loading);
@@ -151,39 +164,45 @@ export async function setupLayerCategory(manager, vcsApp) {
     title: 'drawing.category.layer',
   });
 
-  vcsApp.categoryManager.add({
-    categoryName: 'LayerEditorCategory',
-    selectable: true,
-    singleSelect: true,
-    actions: [
-      {
-        name: 'Add',
-        icon: 'mdi-plus',
-        callback() {
-          const layer = new VectorLayer({
-            properties: { title: 'Drawing Layer' },
-            projection: mercatorProjection.toJSON(),
-          });
-          layer.activate();
-          category.collection.add(layer);
+  vcsApp.categoryManager.add(
+    {
+      categoryName: 'LayerEditorCategory',
+      selectable: true,
+      singleSelect: true,
+      actions: [
+        {
+          name: 'Add',
+          icon: 'mdi-plus',
+          callback() {
+            const layer = new VectorLayer({
+              properties: { title: 'Drawing Layer' },
+              projection: mercatorProjection.toJSON(),
+            });
+            layer.activate();
+            category.collection.add(layer);
+          },
         },
-      },
-      {
-        name: 'Import',
-        callback() {
-          vcsApp.windowManager.add({
-            component: ImportDialog,
-            state: {
-              hideHeader: true,
-            },
-            provides: {
-              category,
-            },
-          }, name);
+        {
+          name: 'Import',
+          callback() {
+            vcsApp.windowManager.add(
+              {
+                component: ImportDialog,
+                state: {
+                  hideHeader: true,
+                },
+                provides: {
+                  category,
+                },
+              },
+              name,
+            );
+          },
         },
-      },
-    ],
-  }, name);
+      ],
+    },
+    name,
+  );
 
   vcsApp.categoryManager.addMappingFunction(
     () => true,

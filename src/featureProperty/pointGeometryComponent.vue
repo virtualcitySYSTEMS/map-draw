@@ -1,7 +1,12 @@
 <template>
-  <div class="pa-2" v-if="coordinate">
-    <CoordinateInput
-      v-model="coordinate"
+  <div class="px-1" v-if="coordinate">
+    <CoordinateInput v-model="coordinate" :wgs84="isWgs84" />
+    <VcsSelect
+      v-model="isWgs84"
+      :items="[
+        { value: true, text: 'EPSG: 4326' },
+        { value: false, text: 'EPSG: 3857' },
+      ]"
     />
   </div>
 </template>
@@ -9,12 +14,14 @@
 <script>
   import { computed, inject, onUnmounted, ref, watch } from 'vue';
   import { unByKey } from 'ol/Observable.js';
+  import { VcsSelect } from '@vcmap/ui';
   import CoordinateInput from './coordinateInput.vue';
 
   export default {
     name: 'PointGeometryComponent',
     components: {
       CoordinateInput,
+      VcsSelect,
     },
     setup() {
       const features = inject('features');
@@ -49,16 +56,17 @@
 
       return {
         coordinate: computed({
-          get() { return coordinate.value; },
+          get() {
+            return coordinate.value;
+          },
           set(newCoordinates) {
             features.value[0].getGeometry().setCoordinates(newCoordinates);
           },
         }),
+        isWgs84: ref(false),
       };
     },
   };
 </script>
 
-<style scoped>
-
-</style>
+<style scoped></style>

@@ -3,7 +3,6 @@ import {
   writeGeoJSONFeature,
   parseGeoJSON,
   GeometryType,
-  TransformationMode,
   Viewpoint,
   mercatorProjection,
   Extent,
@@ -12,9 +11,9 @@ import {
 import { unByKey } from 'ol/Observable.js';
 import { shallowRef, watch } from 'vue';
 import { isEmpty } from 'ol/extent.js';
-import { createModalAction, WindowSlot } from '@vcmap/ui';
+import { createModalAction } from '@vcmap/ui';
 import { name } from '../../package.json';
-import AttributeWindow, { defaultAttributeTablePosition } from './attributeTable.vue';
+// import AttributeWindow, { defaultAttributeTablePosition } from './attributeTable.vue';
 import RenameDialog from './renameDialog.vue';
 
 /**
@@ -81,7 +80,9 @@ function setTitleOnFeature(feature) {
  * @extends {Category<SimpleDrawingItem>}
  */
 class SimpleEditorCategory extends Category {
-  static get className() { return 'SimpleEditorCategory'; }
+  static get className() {
+    return 'SimpleEditorCategory';
+  }
 
   constructor(options) {
     super(options);
@@ -111,7 +112,10 @@ class SimpleEditorCategory extends Category {
         }
       }),
       source.on('addfeature', ({ feature }) => {
-        if (isFeatureOfType(feature, this._categoryType) && !this.collection.hasKey(feature.getId())) {
+        if (
+          isFeatureOfType(feature, this._categoryType) &&
+          !this.collection.hasKey(feature.getId())
+        ) {
           setTitleOnFeature(feature);
           this.collection.add({
             name: feature.getId(),
@@ -162,7 +166,8 @@ class SimpleEditorCategory extends Category {
   // eslint-disable-next-line class-methods-use-this
   async _deserializeItem(item) {
     const { features } = parseGeoJSON(item.feature);
-    if (features[0]) { // XXX do we warn on feature collection?
+    if (features[0]) {
+      // XXX do we warn on feature collection?
       item.feature = features[0];
     }
     return item;
@@ -186,7 +191,13 @@ export default SimpleEditorCategory;
  * @param {Category<SimpleDrawingItem>} c
  * @param {VcsListItem} categoryListItem
  */
-function itemMappingFunction(vcsApp, manager, featureItem, c, categoryListItem) {
+function itemMappingFunction(
+  vcsApp,
+  manager,
+  featureItem,
+  c,
+  categoryListItem,
+) {
   const featureId = featureItem.feature.getId();
   categoryListItem.title = featureItem.feature.get('title') ?? 'Object';
   const layer = manager.getDefaultLayer();
@@ -202,7 +213,7 @@ function itemMappingFunction(vcsApp, manager, featureItem, c, categoryListItem) 
         hidden = true;
         this.icon = 'mdi-eye-off';
         if (manager.currentFeatures.value.includes(featureItem.feature)) {
-          manager.currentSession.value.featureSelection?.clear?.(); // TODO maybe not clear?
+          manager.currentSession.value.clearSelection?.(); // TODO maybe not clear?
         }
       } else {
         layer.featureVisibility.showObjects([featureItem.name]);
@@ -223,7 +234,7 @@ function itemMappingFunction(vcsApp, manager, featureItem, c, categoryListItem) 
     {
       component: RenameDialog,
       provides: {
-        setName(newName){
+        setName(newName) {
           featureItem.feature.set('title', newName, true);
         },
         item: categoryListItem,
@@ -239,8 +250,12 @@ function itemMappingFunction(vcsApp, manager, featureItem, c, categoryListItem) 
       async callback() {
         const extent = featureItem.feature.getGeometry()?.getExtent?.();
         if (extent && !isEmpty(extent)) {
-          const vp = Viewpoint
-            .createViewpointFromExtent(new Extent({ coordinates: extent, projection: mercatorProjection.toJSON() }));
+          const vp = Viewpoint.createViewpointFromExtent(
+            new Extent({
+              coordinates: extent,
+              projection: mercatorProjection.toJSON(),
+            }),
+          );
           vp.animate = true;
           await vcsApp.maps.activeMap?.gotoViewpoint(vp);
         }
@@ -280,25 +295,30 @@ function syncSelection(manager, categoryUiItem, layer) {
   let selectionRevision = 0;
   let featureRevision = 0;
 
-  const selectionWatcher = watch(() => categoryUiItem.selection, () => {
-    if (selectionRevision < featureRevision) {
-      selectionRevision = featureRevision;
-      return;
-    }
-    if (selectionRevision === featureRevision) {
-      selectionRevision += 1;
-      const { selection } = categoryUiItem;
-      if (manager.currentLayer.value !== layer) {
-        manager.currentLayer.value = layer;
+  const selectionWatcher = watch(
+    () => categoryUiItem.selection,
+    () => {
+      if (selectionRevision < featureRevision) {
+        selectionRevision = featureRevision;
+        return;
       }
-      if (!manager.currentSession.value?.type !== SessionType.EDIT_FEATURES) { // TODO dont change edit geometry?
-        manager.startTransformSession(TransformationMode.SELECT);
-      }
+      if (selectionRevision === featureRevision) {
+        selectionRevision += 1;
+        const { selection } = categoryUiItem;
+        if (manager.currentLayer.value !== layer) {
+          manager.currentLayer.value = layer;
+        }
+        if (!manager.currentSession.value?.type !== SessionType.SELECT) {
+          // TODO dont change edit geometry?
+          manager.startSelectSession();
+        }
 
-      manager.currentSession.value.featureSelection
-        .setSelectionSet(layer.getFeaturesById(selection.map(i => i.id)));
-    }
-  });
+        manager.currentSession.value.setCurrentFeatures(
+          layer.getFeaturesById(selection.map((i) => i.id)),
+        );
+      }
+    },
+  );
   const featureWatcher = watch(manager.currentFeatures, () => {
     if (featureRevision < selectionRevision) {
       featureRevision = selectionRevision;
@@ -306,8 +326,9 @@ function syncSelection(manager, categoryUiItem, layer) {
     }
     if (featureRevision === selectionRevision) {
       featureRevision += 1;
-      categoryUiItem.selection = categoryUiItem.items
-        .filter(i => manager.currentFeatures.value.find(f => f.getId() === i.id)); // XXX perfomance?
+      categoryUiItem.selection = categoryUiItem.items.filter((i) =>
+        manager.currentFeatures.value.find((f) => f.getId() === i.id),
+      ); // XXX perfomance?
     }
   });
   return () => {
@@ -332,14 +353,14 @@ async function createCategory(manager, vcsApp, categoryType) {
     layer,
   });
 
-  const attributeWindowId = 'simpleDrawingAttributeWindowId';
-  const features = shallowRef([...category.collection].map(i => i.feature));
+  // const attributeWindowId = 'simpleDrawingAttributeWindowId';
+  const features = shallowRef([...category.collection].map((i) => i.feature));
   const listeners = [
     category.collection.added.addEventListener(() => {
-      features.value = [...category.collection].map(i => i.feature);
+      features.value = [...category.collection].map((i) => i.feature);
     }),
     category.collection.removed.addEventListener(() => {
-      features.value = [...category.collection].map(i => i.feature);
+      features.value = [...category.collection].map((i) => i.feature);
     }),
   ];
 
@@ -354,10 +375,12 @@ async function createCategory(manager, vcsApp, categoryType) {
             if (manager.currentLayer.value !== layer) {
               manager.currentLayer.value = layer;
             }
-            if (!manager.currentSession.value?.type !== SessionType.EDIT_FEATURES) {
-              manager.startTransformSession(TransformationMode.SELECT);
+            if (!manager.currentSession.value?.type !== SessionType.SELECT) {
+              manager.startSelectSession();
             }
-            manager.currentSession.value.featureSelection.setSelectionSet([...category.collection].map(i => i.feature));
+            manager.currentSession.value.setCurrentFeatures(
+              [...category.collection].map((i) => i.feature),
+            );
           },
         },
         {
@@ -366,56 +389,54 @@ async function createCategory(manager, vcsApp, categoryType) {
             if (
               manager.currentLayer.value === layer &&
               manager.currentFeatures.value?.length > 0 &&
-              manager.currentSession.value?.featureSelection
+              manager.currentSession.value?.currentFeatures?.length
             ) {
-              const ids = manager.currentFeatures.value.map(f => f.getId());
-              manager.currentSession.value.featureSelection.clear();
+              const ids = manager.currentFeatures.value.map((f) => f.getId());
+              manager.currentSession.value.clearSelection();
               manager.currentLayer.value.removeFeaturesById(ids);
             }
           },
         },
-        {
-          name: 'Show Attributes',
-          callback() {
-            if (!vcsApp.windowManager.has(attributeWindowId)) {
-              vcsApp.windowManager.add({
-                position: defaultAttributeTablePosition,
-                provides: {
-                  features,
-                  itemSelected({ item, value }) {
-                    if (manager.currentLayer.value !== layer) {
-                      manager.currentLayer.value = layer;
-                    }
-                    if (!manager.currentSession.value?.type !== SessionType.EDIT_FEATURES) {
-                      manager.startTransformSession(TransformationMode.SELECT);
-                    }
-                    /**
-                     * @type {import("@vcmap/core").SelectMultiFeatureInteraction}
-                     */
-                    const { featureSelection } = manager.currentSession.value;
-                    if (value) {
-                      if (!featureSelection.hasFeatureId(item.id)) {
-                        const feature = manager.currentLayer.value.getFeatureById(item.id);
-                        const { selectedFeatures } = featureSelection;
-                        selectedFeatures.push(feature);
-                        featureSelection.setSelectionSet(selectedFeatures);
-                      }
-                    } else if (featureSelection.hasFeatureId((item.id))) {
-                      const { selectedFeatures } = featureSelection;
-                      featureSelection.setSelectionSet(selectedFeatures.filter(f => f.getId() !== item.id));
-                    }
-                  },
-                },
-                component: AttributeWindow,
-                slot: WindowSlot.DETACHED,
-                state: {
-                  id: attributeWindowId,
-                  headerTitle: category.name,
-                },
-              }, name);
-            }
-          },
-        },
+        // {
+        //   name: 'Show Attributes',
+        //   callback() {
+        //     if (!vcsApp.windowManager.has(attributeWindowId)) {
+        //       vcsApp.windowManager.add({
+        //         position: defaultAttributeTablePosition,
+        //         provides: {
+        //           features,
+        //           itemSelected({ item, value }) {
+        //             if (manager.currentLayer.value !== layer) {
+        //               manager.currentLayer.value = layer;
+        //             }
+        //             if (!manager.currentSession.value?.type !== SessionType.SELECT) {
+        //               manager.startSelectSession();
+        //             } else if (manager.currentEditorSession.value) {
+        //               manager.stopEditing();
+        //             }
+        //             const { currentFeatures } = manager.currentSession.value;
+        //             const hasFeature = currentFeatures.some(feature => feature.getId() === item.id); // XXX Add hasFeatureId to SelectFeaturesSessions API?
+        //             if (value && !hasFeature) {
+        //               const feature = manager.currentLayer.value.getFeatureById(item.id);
+        //               currentFeatures.push(feature);
+        //               manager.currentSession.value.setCurrentFeatures(currentFeatures);
+        //             } else if (hasFeature) {
+        //               manager.currentSession.value.setCurrentFeatures(
+        //                 currentFeatures.filter(f => f.getId() !== item.id),
+        //               );
+        //             }
+        //           },
+        //         },
+        //         component: AttributeWindow,
+        //         slot: WindowSlot.DETACHED,
+        //         state: {
+        //           id: attributeWindowId,
+        //           headerTitle: category.name,
+        //         },
+        //       }, name);
+        //     }
+        //   },
+        // },
       ],
     },
     name,
@@ -432,7 +453,9 @@ async function createCategory(manager, vcsApp, categoryType) {
 
   const selectionWatchers = syncSelection(manager, categoryUiItem, layer);
   return () => {
-    listeners.forEach((cb) => { cb(); });
+    listeners.forEach((cb) => {
+      cb();
+    });
     selectionWatchers();
   };
 }
@@ -443,14 +466,13 @@ async function createCategory(manager, vcsApp, categoryType) {
  * @returns {function():void}
  */
 export async function setupSimpleCategories(manager, app) {
-  const listeners = await Promise.all([
-    CategoryType.SHAPE,
-    CategoryType.TEXT,
-    CategoryType.OBJECT,
-  ].map(c => createCategory(manager, app, c)));
+  const listeners = await Promise.all(
+    [CategoryType.SHAPE, CategoryType.TEXT, CategoryType.OBJECT].map((c) =>
+      createCategory(manager, app, c),
+    ),
+  );
 
   return () => {
-    listeners.forEach(cb => cb());
-  }
+    listeners.forEach((cb) => cb());
+  };
 }
-

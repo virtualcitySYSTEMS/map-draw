@@ -1,3 +1,4 @@
+// TODO: Replace all uses of one of these functions with an import from @vcmap/ui
 import { hasSameOrigin } from '@vcmap/core';
 
 /**
@@ -34,7 +35,10 @@ export function downloadBlob(blob, fileName) {
  * @param {string} fileName
  */
 export function downloadText(text, fileName) {
-  downloadURI(`data:text/plain;charset=utf-8,${encodeURIComponent(text)}`, fileName);
+  downloadURI(
+    `data:text/plain;charset=utf-8,${encodeURIComponent(text)}`,
+    fileName,
+  );
 }
 
 /**

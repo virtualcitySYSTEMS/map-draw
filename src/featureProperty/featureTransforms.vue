@@ -1,92 +1,110 @@
 <template>
   <v-sheet>
-    <v-dialog
-      v-model="showTranslate"
-      width="200"
+    <v-container
+      v-if="transformationMode === TransformationMode.TRANSLATE"
+      class="pa-0"
     >
-      <template #activator="{ on, attrs }">
-        <VcsButton
-          v-bind="attrs"
-          v-on="on"
-        >
-          Translate
-        </VcsButton>
-      </template>
-      <v-card class="d-flex pa-2 justify-center" width="200px">
-        <VcsTextField label="X" v-model.number="xValue" />
-        <VcsTextField label="Y" v-model.number="yValue" />
-        <VcsTextField label="Z" v-model.number="zValue" />
-        <VcsButton @click="translate">
-          Apply
-        </VcsButton>
-      </v-card>
-    </v-dialog>
-    <v-dialog
-      v-model="showRotate"
-      width="400"
+      <v-row no-gutters>
+        <v-col>
+          <VcsTextField placeholder="0" prefix="X" v-model.number="xValue" />
+        </v-col>
+        <v-col>
+          <VcsTextField placeholder="0" prefix="Y" v-model.number="yValue" />
+        </v-col>
+        <v-col>
+          <VcsTextField placeholder="0" prefix="Z" v-model.number="zValue" />
+        </v-col>
+        <v-col>
+          <VcsButton @click="translate">
+            {{ $t('drawing.transform.apply') }}
+          </VcsButton>
+        </v-col>
+      </v-row>
+    </v-container>
+    <v-container
+      v-if="transformationMode === TransformationMode.ROTATE"
+      class="pa-0"
     >
-      <template #activator="{ on, attrs }">
-        <VcsButton
-          v-bind="attrs"
-          v-on="on"
-        >
-          Rotate
-        </VcsButton>
-      </template>
-      <v-card class="d-flex pa-2">
-        <VcsTextField label="Angle" v-model.number="xValue" />
-        <VcsButton @click="rotate">
-          Apply
-        </VcsButton>
-        <VcsButton @click="cw">
-          CW
-        </VcsButton>
-        <VcsButton @click="ccw">
-          CCW
-        </VcsButton>
-      </v-card>
-    </v-dialog>
-    <v-dialog
-      v-model="showScale"
-      width="200"
+      <v-row no-gutters>
+        <v-col>
+          <VcsTextField
+            :placeholder="$t('drawing.transform.angle')"
+            v-model.number="xValue"
+          />
+        </v-col>
+        <v-col>
+          <VcsButton @click="rotate">
+            {{ $t('drawing.transform.apply') }}
+          </VcsButton>
+        </v-col>
+        <v-col>
+          <VcsButton @click="cw" tooltip="drawing.transform.cw">
+            <v-icon>$vcsRotateRight</v-icon>
+          </VcsButton>
+        </v-col>
+        <v-col>
+          <VcsButton @click="ccw" tooltip="drawing.transform.ccw">
+            <v-icon>$vcsRotateLeft</v-icon>
+          </VcsButton>
+        </v-col>
+      </v-row>
+    </v-container>
+    <v-container
+      v-if="transformationMode === TransformationMode.SCALE"
+      class="pa-0"
     >
-      <template #activator="{ on, attrs }">
-        <VcsButton
-          v-bind="attrs"
-          v-on="on"
-        >
-          Scale
-        </VcsButton>
-      </template>
-      <v-card class="d-flex pa-2">
-        <VcsTextField label="X" v-model.number="xValue" placeholder="1" />
-        <VcsTextField label="Y" v-model.number="yValue" placeholder="1" />
-        <VcsButton @click="scale">
-          Apply
-        </VcsButton>
-      </v-card>
-    </v-dialog>
-    <VcsButton>Drape</VcsButton>
+      <v-row no-gutters>
+        <v-col>
+          <VcsTextField prefix="X" v-model.number="xValue" placeholder="1" />
+        </v-col>
+        <v-col>
+          <VcsTextField prefix="Y" v-model.number="yValue" placeholder="1" />
+        </v-col>
+        <v-col>
+          <VcsButton @click="scale">
+            {{ $t('drawing.transform.apply') }}
+          </VcsButton>
+        </v-col>
+      </v-row>
+    </v-container>
+    <!-- <v-container
+      class="pa-0"
+    >
+      <v-row>
+        <v-col>
+          <VcsButton>Drape</VcsButton>
+        </v-col>
+      </v-row>
+    </v-container> -->
   </v-sheet>
 </template>
 
 <script>
   // TODO make the above forms so `enter` works as expected
   import { Math as CesiumMath } from '@vcmap-cesium/engine';
+  import { SessionType, TransformationMode } from '@vcmap/core';
   import { VcsButton, VcsTextField } from '@vcmap/ui';
-  import { VCard, VDialog, VSheet } from 'vuetify/lib';
+  import { VSheet, VContainer, VRow, VCol, VIcon } from 'vuetify/lib';
   import { inject, ref } from 'vue';
 
   export default {
     components: {
       VcsButton,
-      VCard,
       VSheet,
-      VDialog,
+      VContainer,
+      VRow,
+      VCol,
+      VIcon,
       VcsTextField,
     },
+    props: {
+      transformationMode: {
+        type: String,
+        required: true,
+      },
+    },
     name: 'FeatureTransforms',
-    setup() {
+    setup(props) {
       const showTranslate = ref(false);
       const showRotate = ref(false);
       const showScale = ref(false);
@@ -94,44 +112,92 @@
       const yValue = ref(null);
       const zValue = ref(null);
       const manager = inject('manager');
+      // eslint-disable-next-line no-unused-vars
       const is3D = ref(true); // XXX todo calculate
+
+      function manageTransformSession() {
+        if (
+          manager.currentEditSession.value?.type === SessionType.EDIT_FEATURES
+        ) {
+          return () => {};
+        } else if (
+          manager.currentEditSession.value?.type === SessionType.EDIT_GEOMETRY
+        ) {
+          manager.startTransformSession(props.transformationMode);
+          return manager.startEditSession;
+        } else {
+          manager.startTransformSession(props.transformationMode);
+          return manager.currentEditSession.value.stop;
+        }
+      }
 
       return {
         showTranslate,
         showRotate,
         showScale,
+        TransformationMode,
         xValue,
         yValue,
         zValue,
-        translate() {
-          manager.currentSession.value.translate(xValue.value ?? 0, yValue.value ?? 0, zValue.value ?? 0);
+        async translate() {
+          const endTransformation = manageTransformSession();
+          // TODO: Replace all the timeout promises when SelectFeaturesSession is async (https://gitlab.virtualcitysystems.de/vcsuite/npm/vcmap/core/-/issues/107)
+          await new Promise((res) => {
+            setTimeout(res, 1);
+          });
+          manager.currentEditSession.value.translate(
+            xValue.value ?? 0,
+            yValue.value ?? 0,
+            zValue.value ?? 0,
+          );
           xValue.value = null;
           yValue.value = null;
           zValue.value = null;
-          showTranslate.value = false;
+          endTransformation();
         },
-        rotate() {
-          manager.currentSession.value.rotate(CesiumMath.toRadians(xValue.value ?? 0));
+        async rotate() {
+          await new Promise((res) => {
+            setTimeout(res, 1);
+          });
+          const endTransformation = manageTransformSession();
+          manager.currentEditSession.value.rotate(
+            CesiumMath.toRadians(xValue.value ?? 0),
+          );
           xValue.value = null;
-          showRotate.value = false;
+          endTransformation();
         },
-        cw() {
-          manager.currentSession.value.rotate(-CesiumMath.PI_OVER_TWO);
+        async cw() {
+          await new Promise((res) => {
+            setTimeout(res, 1);
+          });
+          const endTransformation = manageTransformSession();
+          manager.currentEditSession.value.rotate(-CesiumMath.PI_OVER_TWO);
+          endTransformation();
         },
-        ccw() {
-          manager.currentSession.value.rotate(CesiumMath.PI_OVER_TWO);
+        async ccw() {
+          await new Promise((res) => {
+            setTimeout(res, 1);
+          });
+          const endTransformation = manageTransformSession();
+          manager.currentEditSession.value.rotate(CesiumMath.PI_OVER_TWO);
+          endTransformation();
         },
-        scale() {
-          manager.currentSession.value.scale(xValue.value ?? 1, yValue.value ?? 1);
+        async scale() {
+          await new Promise((res) => {
+            setTimeout(res, 1);
+          });
+          const endTransformation = manageTransformSession();
+          manager.currentEditSession.value.scale(
+            xValue.value ?? 1,
+            yValue.value ?? 1,
+          );
           xValue.value = null;
           yValue.value = null;
-          showScale.value = false;
+          endTransformation();
         },
       };
     },
   };
 </script>
 
-<style scoped>
-
-</style>
+<style scoped></style>

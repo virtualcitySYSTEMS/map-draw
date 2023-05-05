@@ -1,13 +1,7 @@
 <template>
-  <v-dialog
-    :value="true"
-    @input="close"
-    width="300"
-  >
+  <v-dialog :value="true" @input="close" width="300">
     <v-card>
-      <vcs-form-section
-        heading="File Selection"
-      >
+      <vcs-form-section heading="File Selection">
         <vcs-text-field
           v-model="file"
           type="file"
@@ -16,16 +10,19 @@
           accept=".geojson,.json,.txt"
         />
       </vcs-form-section>
-      <vcs-button @click="run" v-if="file">
-        Import
-      </vcs-button>
+      <vcs-button @click="run" v-if="file"> Import </vcs-button>
     </v-card>
   </v-dialog>
 </template>
 
 <script>
   import { VDialog, VCard } from 'vuetify/lib';
-  import { VcsFormSection, VcsTextField, VcsButton, NotificationType } from '@vcmap/ui';
+  import {
+    VcsFormSection,
+    VcsTextField,
+    VcsButton,
+    NotificationType,
+  } from '@vcmap/ui';
   import { inject, ref } from 'vue';
   import { mercatorProjection, parseGeoJSON, VectorLayer } from '@vcmap/core';
 
@@ -57,20 +54,19 @@
         file,
         close,
         hello(e) {
+          // eslint-disable-next-line no-console
           console.log('heelo', e);
         },
         run() {
           if (file.value) {
             const reader = new FileReader();
-            reader.onload = (e) => { // XXX maybe disable dialgo during import?
+            reader.onload = (e) => {
+              // XXX maybe disable dialgo during import?
               const text = e.target.result;
               try {
-                const { features, style, vcsMeta } = parseGeoJSON(
-                  text,
-                  {
-                    dynamicStyle: true,
-                  },
-                );
+                const { features, style, vcsMeta } = parseGeoJSON(text, {
+                  dynamicStyle: true,
+                });
                 const layer = new VectorLayer({
                   projection: mercatorProjection.toJSON(),
                   properties: {
@@ -86,7 +82,10 @@
                 category.collection.add(layer);
                 close();
               } catch (err) {
-                app.notifier.add({ message: err.message, type: NotificationType.ERROR });
+                app.notifier.add({
+                  message: err.message,
+                  type: NotificationType.ERROR,
+                });
                 file.value = null;
               }
             };
@@ -98,6 +97,4 @@
   };
 </script>
 
-<style scoped>
-
-</style>
+<style scoped></style>

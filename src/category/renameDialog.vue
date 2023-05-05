@@ -30,7 +30,9 @@
       const originalTitle = item.title;
       const instance = getCurrentInstance().proxy;
       const title = computed({
-        get() { return instance.$t(item.title); },
+        get() {
+          return instance.$t(item.title);
+        },
         set(newTitle) {
           setName(newTitle);
           item.title = newTitle;
@@ -53,6 +55,4 @@
   };
 </script>
 
-<style scoped>
-
-</style>
+<style scoped></style>

@@ -46,8 +46,11 @@
       }
       props.id = feature.getId();
       const geometryName = feature.getGeometryName();
-      item = Object.fromEntries(Object.entries(props)
-        .filter(([key]) => !(key.startsWith('olcs') || key === geometryName))); // how to handle nested properties?
+      item = Object.fromEntries(
+        Object.entries(props).filter(
+          ([key]) => !(key.startsWith('olcs') || key === geometryName),
+        ),
+      ); // how to handle nested properties?
     };
     setupProps();
 
@@ -71,25 +74,29 @@
       /** @type {import("vue").Ref<Array<import("ol").Feature>>} */
       const features = inject('features', ref([]));
       let featureListeners = [];
-      watch(features, () => {
-        unByKey(featureListeners);
-        const propertyNames = new Set(['id']);
-        featureListeners = new Array(features.value.length);
-        items.value = features.value.map((f, index) => {
-          const { item, eventKey } = setupFeature(f);
-          featureListeners[index] = eventKey;
-          Object.keys(item).forEach((n) => {
-            propertyNames.add(n);
+      watch(
+        features,
+        () => {
+          unByKey(featureListeners);
+          const propertyNames = new Set(['id']);
+          featureListeners = new Array(features.value.length);
+          items.value = features.value.map((f, index) => {
+            const { item, eventKey } = setupFeature(f);
+            featureListeners[index] = eventKey;
+            Object.keys(item).forEach((n) => {
+              propertyNames.add(n);
+            });
+            return item;
           });
-          return item;
-        });
-        headers.value = [...propertyNames].map(name => ({
-          text: name,
-          value: name,
-        }));
-      }, { immediate: true });
+          headers.value = [...propertyNames].map((name) => ({
+            text: name,
+            value: name,
+          }));
+        },
+        { immediate: true },
+      );
       /** @type {import("vue").Ref<Array<import("ol").Feature>>|null} */
-      const selectedFeatures = inject('selectedFeatures', null);
+      // const selectedFeatures = inject('selectedFeatures', null);
       const itemSelected = inject('itemSelected', () => {});
 
       onUnmounted(() => {
@@ -105,6 +112,4 @@
   };
 </script>
 
-<style scoped>
-
-</style>
+<style scoped></style>
