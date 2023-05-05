@@ -467,9 +467,8 @@ async function createCategory(manager, vcsApp, categoryType) {
  */
 export async function setupSimpleCategories(manager, app) {
   const listeners = await Promise.all(
-    [CategoryType.SHAPE, CategoryType.TEXT, CategoryType.OBJECT].map((c) =>
-      createCategory(manager, app, c),
-    ),
+    // [CategoryType.SHAPE, CategoryType.TEXT, CategoryType.OBJECT].map((c) =>
+    [CategoryType.SHAPE].map((c) => createCategory(manager, app, c)),
   );
 
   return () => {

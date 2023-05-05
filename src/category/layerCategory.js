@@ -1,13 +1,13 @@
 import {
   Category,
-  mercatorProjection,
-  VectorLayer,
+  // mercatorProjection,
+  // VectorLayer,
   writeGeoJSON,
 } from '@vcmap/core';
 import { createModalAction } from '@vcmap/ui';
 import { name } from '../../package.json';
 import RenameDialog from './renameDialog.vue';
-import ImportDialog from './importDialog.vue';
+// import ImportDialog from './importDialog.vue';
 import { downloadText } from '../util/downloadHelper.js';
 
 /**
@@ -158,51 +158,51 @@ function itemMappingFunction(
  * @returns {Promise<function():void>}
  */
 export async function setupLayerCategory(manager, vcsApp) {
-  const category = await vcsApp.categories.requestCategory({
-    type: LayerEditorCategory.className,
-    name: 'LayerEditorCategory',
-    title: 'drawing.category.layer',
-  });
+  // const category = await vcsApp.categories.requestCategory({
+  //   type: LayerEditorCategory.className,
+  //   name: 'LayerEditorCategory',
+  //   title: 'drawing.category.layer',
+  // });
 
-  vcsApp.categoryManager.add(
-    {
-      categoryName: 'LayerEditorCategory',
-      selectable: true,
-      singleSelect: true,
-      actions: [
-        {
-          name: 'Add',
-          icon: 'mdi-plus',
-          callback() {
-            const layer = new VectorLayer({
-              properties: { title: 'Drawing Layer' },
-              projection: mercatorProjection.toJSON(),
-            });
-            layer.activate();
-            category.collection.add(layer);
-          },
-        },
-        {
-          name: 'Import',
-          callback() {
-            vcsApp.windowManager.add(
-              {
-                component: ImportDialog,
-                state: {
-                  hideHeader: true,
-                },
-                provides: {
-                  category,
-                },
-              },
-              name,
-            );
-          },
-        },
-      ],
-    },
-    name,
-  );
+  // vcsApp.categoryManager.add(
+  //   {
+  //     categoryName: 'LayerEditorCategory',
+  //     selectable: true,
+  //     singleSelect: true,
+  //     actions: [
+  //       {
+  //         name: 'Add',
+  //         icon: 'mdi-plus',
+  //         callback() {
+  //           const layer = new VectorLayer({
+  //             properties: { title: 'Drawing Layer' },
+  //             projection: mercatorProjection.toJSON(),
+  //           });
+  //           layer.activate();
+  //           category.collection.add(layer);
+  //         },
+  //       },
+  //       {
+  //         name: 'Import',
+  //         callback() {
+  //           vcsApp.windowManager.add(
+  //             {
+  //               component: ImportDialog,
+  //               state: {
+  //                 hideHeader: true,
+  //               },
+  //               provides: {
+  //                 category,
+  //               },
+  //             },
+  //             name,
+  //           );
+  //         },
+  //       },
+  //     ],
+  //   },
+  //   name,
+  // );
 
   vcsApp.categoryManager.addMappingFunction(
     () => true,
