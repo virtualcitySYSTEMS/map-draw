@@ -1,5 +1,5 @@
 {
-  "name": "draw",
+  "name": "@vcmap/draw",
   "version": "1.0.0",
   "description": "VC Map plugin for drawing and editing 2D an 3D geometries in the map.",
   "type": "module",

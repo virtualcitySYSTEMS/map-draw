@@ -136,7 +136,6 @@ version:
   script:
     - npm version patch -m "%s [skip-ci]"
     - TAG=`git describe --abbrev=0`
-    - echo git push git@gitlab:vcsuite/"$CI_PROJECT_PATH".git
     - git push git@gitlab:"$CI_PROJECT_PATH".git $TAG
     - git push git@gitlab:"$CI_PROJECT_PATH".git HEAD:$CI_COMMIT_REF_NAME
   before_script:
