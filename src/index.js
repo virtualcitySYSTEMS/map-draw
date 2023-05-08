@@ -25,10 +25,9 @@ export default function drawingPlugin() {
     async initialize(vcsUiApp) {
       this._editorManager = createSimpleEditorManager(vcsUiApp);
       const destroyButtons = addToolButtons(this._editorManager, vcsUiApp);
-      const destroyFeaturePropertyWindow = setupFeaturePropertyWindow(
-        this._editorManager,
-        vcsUiApp,
-      );
+      const { destroy: destroyFeaturePropertyWindow, toggleWindow } =
+        setupFeaturePropertyWindow(this._editorManager, vcsUiApp);
+      this.toggleWindow = toggleWindow;
       vcsUiApp.categoryClassRegistry.registerClass(
         this[moduleIdSymbol],
         SimpleEditorCategory.className,
@@ -99,6 +98,12 @@ export default function drawingPlugin() {
             text: 'Texts',
             object: '3D Objects',
             layer: 'Layers',
+            selectAll: 'Select All',
+            removeSelected: 'Remove Selected',
+            zoomTo: 'Zoom to',
+            rename: 'Rename',
+            edit: 'Edit',
+            remove: 'Remove',
           },
           style: {
             reset: 'Reset',
@@ -118,6 +123,9 @@ export default function drawingPlugin() {
             both: 'Both',
             cesium3DTile: '3D Tiles',
             terrain: 'Terrain',
+          },
+          contextMenu: {
+            editProperties: 'Edit Properties',
           },
         },
       },
@@ -160,6 +168,12 @@ export default function drawingPlugin() {
             text: 'Texte',
             object: '3D Objekte',
             layer: 'Ebenen',
+            selectAll: 'Alle selektieren',
+            removeSelected: 'Selektierte löschen',
+            zoomTo: 'Hin zoomen',
+            rename: 'Umbenennen',
+            edit: 'Editieren',
+            remove: 'Entfernen',
           },
           style: {
             reset: 'Zurücksetzen',
@@ -179,6 +193,9 @@ export default function drawingPlugin() {
             both: 'Beide',
             cesium3DTile: '3D Tiles',
             terrain: 'Gelände',
+          },
+          contextMenu: {
+            editProperties: 'Eigenschaften editieren',
           },
         },
       },

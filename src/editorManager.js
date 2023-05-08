@@ -1,4 +1,4 @@
-import { watch, shallowRef, computed } from 'vue';
+import { watch, shallowRef, ref } from 'vue';
 import {
   GeometryType,
   SelectionMode,
@@ -16,6 +16,7 @@ import {
 import { ToolboxType, WindowSlot } from '@vcmap/ui';
 import { Feature } from 'ol';
 import { LineString, Point, Polygon } from 'ol/geom';
+import { unByKey } from 'ol/Observable.js';
 import { name } from '../package.json';
 import FeaturePropertyWindow, {
   TransformationIcons,
@@ -53,6 +54,8 @@ export const GeometryTypeIcon = {
 };
 
 export const selectInteractionId = 'select_interaction_id';
+
+export const featurePropertyWindowId = 'DrawingFeaturePropertyWindow';
 
 /**
  * @param {import("@vcmap/ui").VcsUiApp} app
@@ -434,21 +437,30 @@ export function addToolButtons(manager, app) {
  * @param {import("@vcmap/ui").VcsUiApp} app
  * @returns {function():void}
  */
+// XXX: Maybe move this to editor manager? So it hast api toggleWindow?
 export function setupFeaturePropertyWindow(manager, app) {
-  const featurePropertyWindowId = 'DrawingFeaturePropertyWindow';
-  const headerTitle = computed(() => {
-    const numberOfFeatures = manager.currentFeatures.value.length;
-    if (numberOfFeatures > 1) {
-      return `(${numberOfFeatures}) Features`;
+  let renameListener = () => {};
+  const headerTitle = ref();
+
+  watch(manager.currentFeatures, (cur) => {
+    renameListener();
+    if (cur.length > 1) {
+      headerTitle.value = `(${cur.length}) Features`;
     } else if (manager.currentSession.value.type === SessionType.CREATE) {
-      return `drawing.create.${manager.currentSession.value.geometryType}`;
-    } else {
-      return `${manager.currentFeatures.value[0]
-        ?.getId()
-        ?.toString()
-        .slice(0, 19)} ...`;
+      headerTitle.value = `drawing.create.${manager.currentSession.value.geometryType}`;
+    } else if (cur.length) {
+      const propertyChangeLister = cur[0].on('propertychange', ({ key }) => {
+        if (key === 'title') {
+          headerTitle.value = cur[0].get(key);
+        }
+      });
+      renameListener = () => {
+        unByKey(propertyChangeLister);
+      };
+      headerTitle.value = manager.currentFeatures.value[0].get('title');
     }
   });
+
   const toggleWindow = () => {
     if (manager.currentFeatures.value.length > 0) {
       if (!app.windowManager.has(featurePropertyWindowId)) {
@@ -474,9 +486,13 @@ export function setupFeaturePropertyWindow(manager, app) {
   };
   const featuresChangedListener = watch(manager.currentFeatures, toggleWindow);
 
-  return () => {
-    app.windowManager.remove(featurePropertyWindowId);
-    featuresChangedListener();
+  return {
+    destroy: () => {
+      app.windowManager.remove(featurePropertyWindowId);
+      featuresChangedListener();
+      renameListener();
+    },
+    toggleWindow,
   };
 }
 
@@ -489,6 +505,7 @@ export function setupFeaturePropertyWindow(manager, app) {
  * @returns {function():void} Function to remove context menu entries.
  */
 export function addContextMenu(app, manager, owner) {
+  const { toggleWindow } = app.plugins.getByKey('@vcmap/draw');
   return app.contextMenuManager.addEventHandler((event) => {
     const contextEntries = [];
     if (
@@ -507,6 +524,16 @@ export function addContextMenu(app, manager, owner) {
         manager.currentSession.value.setCurrentFeatures([event.feature]);
         editFeatures = [event.feature];
       }
+      if (!app.windowManager.has(featurePropertyWindowId)) {
+        contextEntries.push({
+          id: 'draw-edit_properties',
+          name: 'drawing.contextMenu.editProperties',
+          icon: '$vcsEdit',
+          callback() {
+            toggleWindow();
+          },
+        });
+      }
       if (editFeatures.length === 1) {
         contextEntries.push({
           id: 'draw-edit_geometry',
@@ -524,9 +551,30 @@ export function addContextMenu(app, manager, owner) {
           name: `drawing.transform.${mode}`,
           icon: TransformationIcons[mode],
           callback() {
+            if (!app.windowManager.has(featurePropertyWindowId)) {
+              toggleWindow();
+            }
             manager.startTransformSession(mode);
           },
         });
+      });
+      contextEntries.push({
+        id: 'draw-remove',
+        name: 'drawing.category.removeSelected',
+        icon: '$vcsTrashCan',
+        callback() {
+          // XXX Copy paste from simple category
+          const layer = manager.getDefaultLayer();
+          if (
+            manager.currentLayer.value === layer &&
+            manager.currentFeatures.value?.length > 0 &&
+            manager.currentSession.value?.currentFeatures?.length
+          ) {
+            const ids = manager.currentFeatures.value.map((f) => f.getId());
+            manager.currentSession.value.clearSelection();
+            manager.currentLayer.value.removeFeaturesById(ids);
+          }
+        },
       });
     } else {
       manager.currentSession.value?.clearSelection?.();

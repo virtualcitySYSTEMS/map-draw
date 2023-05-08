@@ -230,12 +230,12 @@ function itemMappingFunction(
   };
 
   const { action: modalAction, destroy } = createModalAction(
-    { name: 'Rename' },
+    { name: 'drawing.category.rename' },
     {
       component: RenameDialog,
       provides: {
         setName(newName) {
-          featureItem.feature.set('title', newName, true);
+          featureItem.feature.set('title', newName);
         },
         item: categoryListItem,
       },
@@ -246,7 +246,7 @@ function itemMappingFunction(
   categoryListItem.actions = [
     hideAction,
     {
-      name: 'Zoom To',
+      name: 'drawing.category.zoomTo',
       async callback() {
         const extent = featureItem.feature.getGeometry()?.getExtent?.();
         if (extent && !isEmpty(extent)) {
@@ -263,7 +263,7 @@ function itemMappingFunction(
     },
     modalAction,
     {
-      name: 'Edit',
+      name: 'drawing.category.edit',
       callback() {
         if (hidden) {
           hideAction.callback();
@@ -275,7 +275,7 @@ function itemMappingFunction(
       },
     },
     {
-      name: 'Remove',
+      name: 'drawing.category.remove',
       callback() {
         layer.removeFeaturesById([featureId]);
       },
@@ -370,7 +370,7 @@ async function createCategory(manager, vcsApp, categoryType) {
       selectable: true,
       actions: [
         {
-          name: 'Select All',
+          name: 'drawing.category.selectAll',
           callback() {
             if (manager.currentLayer.value !== layer) {
               manager.currentLayer.value = layer;
@@ -384,7 +384,7 @@ async function createCategory(manager, vcsApp, categoryType) {
           },
         },
         {
-          name: 'Remove Selected',
+          name: 'drawing.category.removeSelected',
           callback() {
             if (
               manager.currentLayer.value === layer &&
