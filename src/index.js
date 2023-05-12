@@ -46,17 +46,12 @@ export default function drawingPlugin() {
         this._editorManager,
         vcsUiApp,
       );
-      const destroyContextMenuEntries = addContextMenu(
-        vcsUiApp,
-        this._editorManager,
-        this.name,
-      );
+      addContextMenu(vcsUiApp, this._editorManager, this.name);
       this._destroy = () => {
         destroyButtons();
         destroyFeaturePropertyWindow();
         destroySimpleCategory();
         destroyLayerCategory();
-        destroyContextMenuEntries();
       };
     },
     i18n: {

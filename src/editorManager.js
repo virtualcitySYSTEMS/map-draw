@@ -446,7 +446,7 @@ export function setupFeaturePropertyWindow(manager, app) {
     renameListener();
     if (cur.length > 1) {
       headerTitle.value = `(${cur.length}) Features`;
-    } else if (manager.currentSession.value.type === SessionType.CREATE) {
+    } else if (manager.currentSession.value?.type === SessionType.CREATE) {
       headerTitle.value = `drawing.create.${manager.currentSession.value.geometryType}`;
     } else if (cur.length) {
       const propertyChangeLister = cur[0].on('propertychange', ({ key }) => {
@@ -499,14 +499,13 @@ export function setupFeaturePropertyWindow(manager, app) {
 // eslint-disable-next-line no-unused-vars
 /**
  * Adds edit actions to the context menu.
- * @param {import("@vcmap/core").VcsApp} app The VcsUiApp instance
+ * @param {import("@vcmap/ui").VcsUiApp} app The VcsUiApp instance
  * @param {EditorManager} manager The editor manager
  * @param {string | symbol} owner The owner of the context menu entries.
- * @returns {function():void} Function to remove context menu entries.
  */
 export function addContextMenu(app, manager, owner) {
   const { toggleWindow } = app.plugins.getByKey('@vcmap/draw');
-  return app.contextMenuManager.addEventHandler((event) => {
+  app.contextMenuManager.addEventHandler((event) => {
     const contextEntries = [];
     if (
       event.feature &&

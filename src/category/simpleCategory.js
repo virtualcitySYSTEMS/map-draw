@@ -153,7 +153,7 @@ class SimpleEditorCategory extends Category {
 
   _itemAdded(item) {
     if (!this._layer.getFeatureById(item.name)) {
-      this._layer.addFeatures(item.feature);
+      this._layer.addFeatures([item.feature]);
     }
   }
 
