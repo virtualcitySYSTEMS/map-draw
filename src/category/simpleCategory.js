@@ -7,6 +7,7 @@ import {
   mercatorProjection,
   Extent,
   SessionType,
+  FeatureVisibilityAction,
 } from '@vcmap/core';
 import { unByKey } from 'ol/Observable.js';
 import { shallowRef, watch } from 'vue';
@@ -15,6 +16,7 @@ import { createModalAction } from '@vcmap/ui';
 import { name } from '../../package.json';
 // import AttributeWindow, { defaultAttributeTablePosition } from './attributeTable.vue';
 import RenameDialog from './renameDialog.vue';
+import { createExportSelectedAction } from '../util/actionHelper.js';
 
 /**
  * @typedef {Object} SimpleDrawingItem
@@ -186,7 +188,7 @@ export default SimpleEditorCategory;
 
 /**
  * @param {import("@vcmap/ui").VcsUiApp} vcsApp
- * @param {EditorManager} manager
+ * @param {import("../editorManager").EditorManager} manager
  * @param {SimpleDrawingItem} featureItem
  * @param {Category<SimpleDrawingItem>} c
  * @param {VcsListItem} categoryListItem
@@ -222,6 +224,19 @@ function itemMappingFunction(
       }
     },
   };
+
+  const hideListener = layer.featureVisibility.changed.addEventListener(
+    (event) => {
+      if (
+        (event.action === FeatureVisibilityAction.HIDE ||
+          event.action === FeatureVisibilityAction.SHOW) &&
+        event.ids.some((id) => id === categoryListItem.name)
+      ) {
+        hidden = !!layer.featureVisibility.hiddenObjects[categoryListItem.name];
+        hideAction.icon = hidden ? 'mdi-eye-off' : 'mdi-eye';
+      }
+    },
+  );
 
   categoryListItem.selectionChanged = (selected) => {
     if (selected && hidden) {
@@ -282,12 +297,15 @@ function itemMappingFunction(
     },
   ];
 
-  categoryListItem.destroy = destroy;
+  categoryListItem.destroy = () => {
+    destroy();
+    hideListener();
+  };
 }
 
 /**
  * @param {EditorManager} manager
- * @param {ManagedCategory} categoryUiItem
+ * @param {import("@vcmap/ui").CollectionComponent} categoryUiItem
  * @param {import("@vcmap/core").VectorLayer} layer
  * @returns {(function(): void)}
  */
@@ -295,30 +313,29 @@ function syncSelection(manager, categoryUiItem, layer) {
   let selectionRevision = 0;
   let featureRevision = 0;
 
-  const selectionWatcher = watch(
-    () => categoryUiItem.selection,
-    () => {
-      if (selectionRevision < featureRevision) {
-        selectionRevision = featureRevision;
-        return;
+  const selectionWatcher = watch(categoryUiItem.selection, () => {
+    if (selectionRevision < featureRevision) {
+      selectionRevision = featureRevision;
+      return;
+    }
+    if (selectionRevision === featureRevision) {
+      selectionRevision += 1;
+      const { selection } = categoryUiItem;
+      if (manager.currentLayer.value !== layer) {
+        manager.currentLayer.value = layer;
       }
-      if (selectionRevision === featureRevision) {
-        selectionRevision += 1;
-        const { selection } = categoryUiItem;
-        if (manager.currentLayer.value !== layer) {
-          manager.currentLayer.value = layer;
-        }
-        if (!manager.currentSession.value?.type !== SessionType.SELECT) {
-          // TODO dont change edit geometry?
-          manager.startSelectSession();
-        }
+      if (!manager.currentSession.value?.type !== SessionType.SELECT) {
+        // TODO dont change edit geometry?
+        manager.startSelectSession();
+      }
 
+      if (selection.value.length) {
         manager.currentSession.value.setCurrentFeatures(
-          layer.getFeaturesById(selection.map((i) => i.id)),
+          layer.getFeaturesById(selection.value.map((i) => i.name)),
         );
       }
-    },
-  );
+    }
+  });
   const featureWatcher = watch(manager.currentFeatures, () => {
     if (featureRevision < selectionRevision) {
       featureRevision = selectionRevision;
@@ -326,8 +343,8 @@ function syncSelection(manager, categoryUiItem, layer) {
     }
     if (featureRevision === selectionRevision) {
       featureRevision += 1;
-      categoryUiItem.selection = categoryUiItem.items.filter((i) =>
-        manager.currentFeatures.value.find((f) => f.getId() === i.id),
+      categoryUiItem.selection.value = categoryUiItem.items.value.filter((i) =>
+        manager.currentFeatures.value.find((f) => f.getId() === i.name),
       ); // XXX perfomance?
     }
   });
@@ -338,20 +355,137 @@ function syncSelection(manager, categoryUiItem, layer) {
 }
 
 /**
- * @param {EditorManager} manager
+ * @param {import("../editorManager").EditorManager} manager
  * @param {VcsUiApp} vcsApp
  * @param {CategoryType} categoryType
  * @returns {function():void}
  */
 async function createCategory(manager, vcsApp, categoryType) {
   const layer = manager.getDefaultLayer();
-  const category = await vcsApp.categories.requestCategory({
-    type: SimpleEditorCategory.className,
-    name: `Simple Drawing - ${categoryType}`,
-    title: categoryTitle[categoryType],
-    categoryType,
-    layer,
-  });
+  let someHidden = !!Object.keys(layer.featureVisibility.hiddenObjects).length;
+
+  const hideAllAction = {
+    name: 'hideAllAction',
+    icon: someHidden ? 'mdi-eye-off' : 'mdi-eye',
+    callback() {
+      if (!someHidden) {
+        layer.featureVisibility.hideObjects(
+          layer.getFeatures().map((feature) => feature.getId()),
+        );
+        if (manager.currentFeatures.value) {
+          manager.currentSession.value.clearSelection?.();
+        }
+        this.icon = 'mdi-eye-off';
+      } else {
+        layer.featureVisibility.clearHiddenObjects();
+        this.icon = 'mdi-eye';
+      }
+    },
+  };
+
+  const hideListener = layer.featureVisibility.changed.addEventListener(
+    (event) => {
+      if (
+        event.action === FeatureVisibilityAction.HIDE ||
+        event.action === FeatureVisibilityAction.SHOW
+      ) {
+        someHidden = !!Object.keys(layer.featureVisibility.hiddenObjects)
+          .length;
+        hideAllAction.icon = someHidden ? 'mdi-eye-off' : 'mdi-eye';
+      }
+    },
+  );
+
+  const { collectionComponent: categoryUiItem, category } =
+    await vcsApp.categoryManager.requestCategory(
+      {
+        type: SimpleEditorCategory.className,
+        name: `Simple Drawing - ${categoryType}`,
+        title: categoryTitle[categoryType],
+        categoryType,
+        layer,
+      },
+      name,
+      {
+        selectable: true,
+      },
+    );
+
+  vcsApp.categoryManager.addActions(
+    [
+      {
+        name: 'drawing.category.selectAll',
+        callback() {
+          if (manager.currentLayer.value !== layer) {
+            manager.currentLayer.value = layer;
+          }
+          if (!manager.currentSession.value?.type !== SessionType.SELECT) {
+            manager.startSelectSession();
+          }
+          manager.currentSession.value.setCurrentFeatures(
+            [...category.collection].map((i) => i.feature),
+          );
+        },
+      },
+      createExportSelectedAction(manager, 'drawing-category-exportSelected'),
+      {
+        name: 'drawing.category.removeSelected',
+        callback() {
+          if (
+            manager.currentLayer.value === layer &&
+            manager.currentFeatures.value?.length > 0 &&
+            manager.currentSession.value?.currentFeatures?.length
+          ) {
+            const ids = manager.currentFeatures.value.map((f) => f.getId());
+            manager.currentSession.value.clearSelection();
+            manager.currentLayer.value.removeFeaturesById(ids);
+          }
+        },
+      },
+      hideAllAction,
+      // {
+      //   name: 'Show Attributes',
+      //   callback() {
+      //     if (!vcsApp.windowManager.has(attributeWindowId)) {
+      //       vcsApp.windowManager.add({
+      //         position: defaultAttributeTablePosition,
+      //         provides: {
+      //           features,
+      //           itemSelected({ item, value }) {
+      //             if (manager.currentLayer.value !== layer) {
+      //               manager.currentLayer.value = layer;
+      //             }
+      //             if (!manager.currentSession.value?.type !== SessionType.SELECT) {
+      //               manager.startSelectSession();
+      //             } else if (manager.currentEditorSession.value) {
+      //               manager.stopEditing();
+      //             }
+      //             const { currentFeatures } = manager.currentSession.value;
+      //             const hasFeature = currentFeatures.some(feature => feature.getId() === item.name); // XXX Add hasFeatureId to SelectFeaturesSessions API?
+      //             if (value && !hasFeature) {
+      //               const feature = manager.currentLayer.value.getFeatureById(item.name);
+      //               currentFeatures.push(feature);
+      //               manager.currentSession.value.setCurrentFeatures(currentFeatures);
+      //             } else if (hasFeature) {
+      //               manager.currentSession.value.setCurrentFeatures(
+      //                 currentFeatures.filter(f => f.getId() !== item.name),
+      //               );
+      //             }
+      //           },
+      //         },
+      //         component: AttributeWindow,
+      //         slot: WindowSlot.DETACHED,
+      //         state: {
+      //           id: attributeWindowId,
+      //           headerTitle: category.name,
+      //         },
+      //       }, name);
+      //     }
+      //   },
+      // },
+    ],
+    name,
+  );
 
   // const attributeWindowId = 'simpleDrawingAttributeWindowId';
   const features = shallowRef([...category.collection].map((i) => i.feature));
@@ -364,91 +498,13 @@ async function createCategory(manager, vcsApp, categoryType) {
     }),
   ];
 
-  const categoryUiItem = vcsApp.categoryManager.add(
-    {
-      categoryName: category.name,
-      selectable: true,
-      actions: [
-        {
-          name: 'drawing.category.selectAll',
-          callback() {
-            if (manager.currentLayer.value !== layer) {
-              manager.currentLayer.value = layer;
-            }
-            if (!manager.currentSession.value?.type !== SessionType.SELECT) {
-              manager.startSelectSession();
-            }
-            manager.currentSession.value.setCurrentFeatures(
-              [...category.collection].map((i) => i.feature),
-            );
-          },
-        },
-        {
-          name: 'drawing.category.removeSelected',
-          callback() {
-            if (
-              manager.currentLayer.value === layer &&
-              manager.currentFeatures.value?.length > 0 &&
-              manager.currentSession.value?.currentFeatures?.length
-            ) {
-              const ids = manager.currentFeatures.value.map((f) => f.getId());
-              manager.currentSession.value.clearSelection();
-              manager.currentLayer.value.removeFeaturesById(ids);
-            }
-          },
-        },
-        // {
-        //   name: 'Show Attributes',
-        //   callback() {
-        //     if (!vcsApp.windowManager.has(attributeWindowId)) {
-        //       vcsApp.windowManager.add({
-        //         position: defaultAttributeTablePosition,
-        //         provides: {
-        //           features,
-        //           itemSelected({ item, value }) {
-        //             if (manager.currentLayer.value !== layer) {
-        //               manager.currentLayer.value = layer;
-        //             }
-        //             if (!manager.currentSession.value?.type !== SessionType.SELECT) {
-        //               manager.startSelectSession();
-        //             } else if (manager.currentEditorSession.value) {
-        //               manager.stopEditing();
-        //             }
-        //             const { currentFeatures } = manager.currentSession.value;
-        //             const hasFeature = currentFeatures.some(feature => feature.getId() === item.id); // XXX Add hasFeatureId to SelectFeaturesSessions API?
-        //             if (value && !hasFeature) {
-        //               const feature = manager.currentLayer.value.getFeatureById(item.id);
-        //               currentFeatures.push(feature);
-        //               manager.currentSession.value.setCurrentFeatures(currentFeatures);
-        //             } else if (hasFeature) {
-        //               manager.currentSession.value.setCurrentFeatures(
-        //                 currentFeatures.filter(f => f.getId() !== item.id),
-        //               );
-        //             }
-        //           },
-        //         },
-        //         component: AttributeWindow,
-        //         slot: WindowSlot.DETACHED,
-        //         state: {
-        //           id: attributeWindowId,
-        //           headerTitle: category.name,
-        //         },
-        //       }, name);
-        //     }
-        //   },
-        // },
-      ],
-    },
-    name,
-  );
-
   vcsApp.categoryManager.addMappingFunction(
     () => {
       return true;
     },
     itemMappingFunction.bind(null, vcsApp, manager),
-    [category.name],
     name,
+    [category.name],
   );
 
   const selectionWatchers = syncSelection(manager, categoryUiItem, layer);
@@ -457,6 +513,7 @@ async function createCategory(manager, vcsApp, categoryType) {
       cb();
     });
     selectionWatchers();
+    hideListener();
   };
 }
 

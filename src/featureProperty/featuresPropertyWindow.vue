@@ -1,28 +1,19 @@
 <template>
   <v-sheet>
     <VcsFormSection
-      v-if="session.type === SessionType.SELECT && features.length === 1"
-      heading="drawing.geometry.header"
-      :header-actions="[
-        {
-          name: 'editGeometry',
-          title: 'drawing.geometry.edit',
-          icon: '$vcsPen',
-          active: isGeometryEditing,
-          callback: () => {
-            toggleEditGeometrySession();
-          },
-        },
-      ]"
+      v-if="session.type === SessionType.SELECT"
+      heading="drawing.modify.header"
+      :action-button-list-overflow-count="5"
+      :header-actions="availableModifyActions"
     >
-      <component
-        v-if="singleFeatureGeometryComponent"
-        :is="singleFeatureGeometryComponent"
-        :is-bbox="isBbox"
-      />
-      <div v-else class="px-2 py-1">
-        {{ $t('drawing.geometry.info1') }} <v-icon>$vcsPen</v-icon>
-        {{ $t('drawing.geometry.info2') }}.
+      <div class="px-1">
+        <feature-transforms
+          v-if="currentTransformationMode"
+          :transformation-mode="currentTransformationMode"
+        />
+        <div v-else class="px-2 py-1">
+          {{ $t('drawing.modify.info') }}
+        </div>
       </div>
     </VcsFormSection>
     <VcsFormSection heading="drawing.style.header">
@@ -31,28 +22,12 @@
     <VcsFormSection heading="drawing.parameters.header">
       <feature-parameters />
     </VcsFormSection>
-    <VcsFormSection
-      v-if="session.type === SessionType.SELECT"
-      heading="drawing.transform.header"
-      :action-button-list-overflow-count="4"
-      :header-actions="availableTransformationModes"
-    >
-      <div class="px-1">
-        <feature-transforms
-          v-if="currentTransformationMode"
-          :transformation-mode="currentTransformationMode"
-        />
-        <div v-else class="px-2 py-1">
-          {{ $t('drawing.transform.info') }}
-        </div>
-      </div>
-    </VcsFormSection>
   </v-sheet>
 </template>
 
 <script>
-  import { VSheet, VCard, VChip, VIcon } from 'vuetify/lib';
-  import { VcsFormSection, VcsSelect } from '@vcmap/ui';
+  import { VSheet } from 'vuetify/lib';
+  import { VcsFormSection } from '@vcmap/ui';
   import { unByKey } from 'ol/Observable.js';
   import {
     inject,
@@ -64,9 +39,6 @@
     computed,
   } from 'vue';
   import { GeometryType, SessionType, TransformationMode } from '@vcmap/core';
-  import CircleGeometryComponent from './circleGeometryComponent.vue';
-  import PointGeometryComponent from './pointGeometryComponent.vue';
-  import RectangleGeometryComponent from './rectangleGeometryComponent.vue';
   import StyleComponent from './styleComponent.vue';
   import FeatureParameters from './featureParameters.vue';
   import FeatureTransforms from './featureTransforms.vue';
@@ -93,11 +65,21 @@
     const isSinglePoint =
       features.length === 1 &&
       features[0].getGeometry().getType() === GeometryType.Point;
+    const isSingleCircle =
+      features.length === 1 &&
+      features[0].getGeometry().getType() === GeometryType.Circle;
+    const isBboxSelected = features.every(
+      (feature) =>
+        feature.getGeometry().getType() === GeometryType.Polygon &&
+        feature.getGeometry().get('_vcsGeomType') === GeometryType.BBox,
+    );
     return [
       TransformationMode.TRANSLATE,
       TransformationMode.EXTRUDE,
-      ...(!isSinglePoint ? [TransformationMode.ROTATE] : []),
-      ...(!isSinglePoint ? [TransformationMode.SCALE] : []),
+      ...(isSinglePoint || isSingleCircle || isBboxSelected
+        ? []
+        : [TransformationMode.ROTATE]),
+      ...(isSinglePoint || isSingleCircle ? [] : [TransformationMode.SCALE]),
     ];
   }
 
@@ -141,14 +123,7 @@
       FeatureTransforms,
       FeatureParameters,
       VSheet,
-      VCard,
-      VChip,
-      VIcon,
       VcsFormSection,
-      VcsSelect,
-      CircleGeometryComponent,
-      PointGeometryComponent,
-      RectangleGeometryComponent,
       StyleComponent,
     },
     name: 'FeaturesPropertyWindow',
@@ -194,7 +169,7 @@
         }
       });
 
-      function toggleEditSession(mode) {
+      function toggleTransformationSession(mode) {
         if (
           currentTransformationMode.value &&
           currentTransformationMode.value === mode
@@ -205,21 +180,42 @@
         }
       }
 
-      const availableTransformationModes = computed(() => {
-        const allowedModes = getAllowedTransformationModes(
-          editorManager.currentFeatures.value,
-        );
-        return allowedModes.map((mode) => {
+      function toggleEditGeometrySession() {
+        if (isGeometryEditing.value) {
+          editorManager.stopEditing();
+        } else {
+          editorManager.startEditSession();
+        }
+      }
+
+      const availableModifyActions = computed(() => {
+        const allowedModes = getAllowedTransformationModes(features.value);
+
+        const allowedActions = allowedModes.map((mode) => {
           return {
             name: mode,
             title: `drawing.transform.${mode}`,
             icon: TransformationIcons[mode],
             active: currentTransformationMode.value === mode,
             callback: () => {
-              toggleEditSession(mode);
+              toggleTransformationSession(mode);
             },
           };
         });
+
+        if (features.value.length === 1) {
+          allowedActions.unshift({
+            name: 'editGeometry',
+            title: `drawing.geometry.edit`,
+            icon: '$vcsPen',
+            active: isGeometryEditing.value,
+            callback: () => {
+              toggleEditGeometrySession();
+            },
+          });
+        }
+
+        return allowedActions;
       });
 
       let featureWatcher = () => {};
@@ -242,17 +238,11 @@
         SessionType,
         isBbox,
         isGeometryEditing,
-        toggleEditGeometrySession() {
-          if (isGeometryEditing.value) {
-            editorManager.stopEditing();
-          } else {
-            editorManager.startEditSession();
-          }
-        },
+        toggleEditGeometrySession,
         currentTransformationMode,
         TransformationMode,
         TransformationIcons,
-        availableTransformationModes,
+        availableModifyActions,
       };
     },
   };

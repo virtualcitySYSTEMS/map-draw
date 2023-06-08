@@ -5,13 +5,11 @@ import {
   createSimpleEditorManager,
   setupFeaturePropertyWindow,
   addContextMenu,
+  setupKeyListeners,
 } from './editorManager.js';
 import SimpleEditorCategory, {
   setupSimpleCategories,
 } from './category/simpleCategory.js';
-import LayerEditorCategory, {
-  setupLayerCategory,
-} from './category/layerCategory.js';
 
 export default function drawingPlugin() {
   return {
@@ -27,22 +25,14 @@ export default function drawingPlugin() {
       const destroyButtons = addToolButtons(this._editorManager, vcsUiApp);
       const { destroy: destroyFeaturePropertyWindow, toggleWindow } =
         setupFeaturePropertyWindow(this._editorManager, vcsUiApp);
+      const destroyKeyListeners = setupKeyListeners(this._editorManager);
       this.toggleWindow = toggleWindow;
       vcsUiApp.categoryClassRegistry.registerClass(
         this[moduleIdSymbol],
         SimpleEditorCategory.className,
         SimpleEditorCategory,
       );
-      vcsUiApp.categoryClassRegistry.registerClass(
-        this[moduleIdSymbol],
-        LayerEditorCategory.className,
-        LayerEditorCategory,
-      );
       const destroySimpleCategory = await setupSimpleCategories(
-        this._editorManager,
-        vcsUiApp,
-      );
-      const destroyLayerCategory = await setupLayerCategory(
         this._editorManager,
         vcsUiApp,
       );
@@ -51,7 +41,7 @@ export default function drawingPlugin() {
         destroyButtons();
         destroyFeaturePropertyWindow();
         destroySimpleCategory();
-        destroyLayerCategory();
+        destroyKeyListeners();
       };
     },
     i18n: {
@@ -70,18 +60,17 @@ export default function drawingPlugin() {
             [GeometryType.LineString]: 'Line',
             [GeometryType.BBox]: 'Box',
             [GeometryType.Circle]: 'Circle',
-            edit: 'Edit Geometry',
+            edit: 'Edit geometry',
             header: 'Geometry',
             info1: 'For editing the vertices of the geometry click the',
             info2: 'icon in the header above',
           },
           transform: {
-            [TransformationMode.TRANSLATE]: 'Translate Features',
-            [TransformationMode.ROTATE]: 'Rotate Features',
-            [TransformationMode.SCALE]: 'Scale Features',
-            [TransformationMode.EXTRUDE]: 'Extrude Features',
+            [TransformationMode.TRANSLATE]: 'Translate features',
+            [TransformationMode.ROTATE]: 'Rotate features',
+            [TransformationMode.SCALE]: 'Scale features',
+            [TransformationMode.EXTRUDE]: 'Extrude features',
             header: 'Transform',
-            info: 'For transforming the selected feature(s), click on one of the icons in the header above.',
             apply: 'Apply',
             cw: 'Rotate 90° clockwise',
             ccw: 'Rotate 90° counter clockwise',
@@ -91,14 +80,18 @@ export default function drawingPlugin() {
           category: {
             shape: 'Shapes',
             text: 'Texts',
-            object: '3D Objects',
+            object: '3D objects',
             layer: 'Layers',
-            selectAll: 'Select All',
-            removeSelected: 'Remove Selected',
+            selectAll: 'Select all',
+            removeSelected: 'Remove selected',
             zoomTo: 'Zoom to',
             rename: 'Rename',
             edit: 'Edit',
             remove: 'Remove',
+          },
+          modify: {
+            header: 'Modify',
+            info: 'For modifying the selected feature(s), click on one of the icons in the header above.',
           },
           style: {
             reset: 'Reset',
@@ -110,7 +103,7 @@ export default function drawingPlugin() {
           },
           parameters: {
             header: 'Parameters',
-            altitudeMode: 'Altitude Mode',
+            altitudeMode: 'Altitude mode',
             groundLevel: 'Ground level',
             absolute: 'Absolute',
             classificationType: 'Classification',
@@ -120,7 +113,8 @@ export default function drawingPlugin() {
             terrain: 'Terrain',
           },
           contextMenu: {
-            editProperties: 'Edit Properties',
+            editProperties: 'Edit properties',
+            exportSelected: 'Export selected',
           },
         },
       },
@@ -191,6 +185,7 @@ export default function drawingPlugin() {
           },
           contextMenu: {
             editProperties: 'Eigenschaften editieren',
+            exportSelected: 'Selektierte exportieren',
           },
         },
       },

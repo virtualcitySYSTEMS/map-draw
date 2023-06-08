@@ -1,4 +1,4 @@
-import { watch, shallowRef, ref } from 'vue';
+import { watch, shallowRef, ref, computed } from 'vue';
 import {
   GeometryType,
   SelectionMode,
@@ -22,6 +22,11 @@ import FeaturePropertyWindow, {
   TransformationIcons,
   getAllowedTransformationModes,
 } from './featureProperty/featuresPropertyWindow.vue';
+import addKeyListeners from './util/keyListeners.js';
+import {
+  createDeleteAction,
+  createExportSelectedAction,
+} from './util/actionHelper.js';
 
 /**
  * @typedef {Object} EditorManager
@@ -418,6 +423,27 @@ function createCreateToolbox(manager) {
 
 /**
  * @param {EditorManager} manager
+ * @returns {function():void}
+ */
+export function setupKeyListeners(manager) {
+  let listeners = () => {};
+  const watcher = watch(manager.currentSession, (session) => {
+    listeners();
+    if (session) {
+      listeners = addKeyListeners(manager);
+    } else {
+      listeners = () => {};
+    }
+  });
+
+  return () => {
+    listeners();
+    watcher();
+  };
+}
+
+/**
+ * @param {EditorManager} manager
  * @param {import("@vcmap/ui").VcsUiApp} app
  * @returns {function():void}
  */
@@ -460,6 +486,11 @@ export function setupFeaturePropertyWindow(manager, app) {
       headerTitle.value = manager.currentFeatures.value[0].get('title');
     }
   });
+  const headerActions = computed(() => [
+    ...(manager.currentSession.value?.type === SessionType.SELECT
+      ? [createDeleteAction(manager, 'draw-header-delete')]
+      : []),
+  ]);
 
   const toggleWindow = () => {
     if (manager.currentFeatures.value.length > 0) {
@@ -475,6 +506,7 @@ export function setupFeaturePropertyWindow(manager, app) {
             state: {
               headerTitle,
               styles: { width: '280px', height: 'auto' },
+              headerActions,
             },
           },
           name,
@@ -523,16 +555,16 @@ export function addContextMenu(app, manager, owner) {
         manager.currentSession.value.setCurrentFeatures([event.feature]);
         editFeatures = [event.feature];
       }
-      if (!app.windowManager.has(featurePropertyWindowId)) {
-        contextEntries.push({
-          id: 'draw-edit_properties',
-          name: 'drawing.contextMenu.editProperties',
-          icon: '$vcsEdit',
-          callback() {
-            toggleWindow();
-          },
-        });
-      }
+      // if (!app.windowManager.has(featurePropertyWindowId)) {
+      contextEntries.push({
+        id: 'draw-edit_properties',
+        name: 'drawing.contextMenu.editProperties',
+        icon: '$vcsEdit',
+        callback() {
+          toggleWindow();
+        },
+      });
+      // }
       if (editFeatures.length === 1) {
         contextEntries.push({
           id: 'draw-edit_geometry',
@@ -557,24 +589,10 @@ export function addContextMenu(app, manager, owner) {
           },
         });
       });
-      contextEntries.push({
-        id: 'draw-remove',
-        name: 'drawing.category.removeSelected',
-        icon: '$vcsTrashCan',
-        callback() {
-          // XXX Copy paste from simple category
-          const layer = manager.getDefaultLayer();
-          if (
-            manager.currentLayer.value === layer &&
-            manager.currentFeatures.value?.length > 0 &&
-            manager.currentSession.value?.currentFeatures?.length
-          ) {
-            const ids = manager.currentFeatures.value.map((f) => f.getId());
-            manager.currentSession.value.clearSelection();
-            manager.currentLayer.value.removeFeaturesById(ids);
-          }
-        },
-      });
+      contextEntries.push(
+        createExportSelectedAction(manager, 'draw-context-exportSelected'),
+      );
+      contextEntries.push(createDeleteAction(manager, 'draw-context-delete'));
     } else {
       manager.currentSession.value?.clearSelection?.();
     }
