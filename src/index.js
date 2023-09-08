@@ -1,15 +1,13 @@
 import { GeometryType, TransformationMode, moduleIdSymbol } from '@vcmap/core';
 import { version, name } from '../package.json';
-import {
-  addToolButtons,
-  createSimpleEditorManager,
-  setupFeaturePropertyWindow,
-  addContextMenu,
-  setupKeyListeners,
-} from './editorManager.js';
+import { createSimpleEditorManager } from './editorManager.js';
+import { addToolButtons } from './util/toolbox.js';
+import { setupKeyListeners } from './util/keyListeners.js';
+import addContextMenu from './util/context.js';
 import SimpleEditorCategory, {
   setupSimpleCategories,
 } from './category/simpleCategory.js';
+import { setupDrawWindow } from './window/setup.js';
 
 export default function drawingPlugin() {
   return {
@@ -19,14 +17,24 @@ export default function drawingPlugin() {
     get version() {
       return version;
     },
+    getDefaultOptions() {
+      return {};
+    },
+    toJSON() {
+      return {};
+    },
+    getConfigEditors() {
+      return [];
+    },
     _destroy: () => {},
     async initialize(vcsUiApp) {
       this._editorManager = createSimpleEditorManager(vcsUiApp);
       const destroyButtons = addToolButtons(this._editorManager, vcsUiApp);
-      const { destroy: destroyFeaturePropertyWindow, toggleWindow } =
-        setupFeaturePropertyWindow(this._editorManager, vcsUiApp);
+      const { destroy: destroyDrawWindow, toggleWindow } = setupDrawWindow(
+        this._editorManager,
+        vcsUiApp,
+      );
       const destroyKeyListeners = setupKeyListeners(this._editorManager);
-      this.toggleWindow = toggleWindow;
       vcsUiApp.categoryClassRegistry.registerClass(
         this[moduleIdSymbol],
         SimpleEditorCategory.className,
@@ -36,10 +44,10 @@ export default function drawingPlugin() {
         this._editorManager,
         vcsUiApp,
       );
-      addContextMenu(vcsUiApp, this._editorManager, this.name);
+      addContextMenu(vcsUiApp, this._editorManager, this.name, toggleWindow);
       this._destroy = () => {
         destroyButtons();
-        destroyFeaturePropertyWindow();
+        destroyDrawWindow();
         destroySimpleCategory();
         destroyKeyListeners();
       };
@@ -64,6 +72,7 @@ export default function drawingPlugin() {
             header: 'Geometry',
             info1: 'For editing the vertices of the geometry click the',
             info2: 'icon in the header above',
+            placeOnTerrain: 'Place on terrain',
           },
           transform: {
             [TransformationMode.TRANSLATE]: 'Translate features',
@@ -83,11 +92,16 @@ export default function drawingPlugin() {
             object: '3D objects',
             layer: 'Layers',
             selectAll: 'Select all',
-            removeSelected: 'Remove selected',
+            hideAll: 'Hide all',
+            showAll: 'Show all',
+            removeSelected: 'Remove selected features',
             zoomTo: 'Zoom to',
             rename: 'Rename',
             edit: 'Edit',
             remove: 'Remove',
+            import: 'Import JSON file',
+            exportSelected: 'Export selected features',
+            exportAll: 'Export all features',
           },
           modify: {
             header: 'Modify',
@@ -138,6 +152,7 @@ export default function drawingPlugin() {
             info1:
               'Um in der Karte die Eckpunkte der Geomtrie zu bearbeiten, klicken Sie auf den',
             info2: 'Icon in der Überschrift',
+            placeOnTerrain: 'Auf Gelände plazieren',
           },
           transform: {
             [TransformationMode.TRANSLATE]: 'Objekt verschieben',
@@ -158,11 +173,20 @@ export default function drawingPlugin() {
             object: '3D Objekte',
             layer: 'Ebenen',
             selectAll: 'Alle selektieren',
-            removeSelected: 'Selektierte löschen',
+            hideAll: 'Alle ausblenden',
+            showAll: 'Alle einblenden',
+            removeSelected: 'Selektierte Feature löschen',
             zoomTo: 'Hin zoomen',
             rename: 'Umbenennen',
             edit: 'Editieren',
             remove: 'Entfernen',
+            import: 'JSON Datei importieren',
+            exportSelected: 'Export selected',
+            exportAll: 'Alle Feature exportieren',
+          },
+          modify: {
+            header: 'Editieren',
+            info: 'Klicke die Symbole in der Überschrift um die selektierten Geometrien zu editieren.',
           },
           style: {
             reset: 'Zurücksetzen',

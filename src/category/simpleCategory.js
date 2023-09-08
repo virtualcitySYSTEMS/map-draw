@@ -9,14 +9,17 @@ import {
   SessionType,
   FeatureVisibilityAction,
 } from '@vcmap/core';
+import { Feature } from 'ol';
 import { unByKey } from 'ol/Observable.js';
-import { shallowRef, watch } from 'vue';
+import { watch } from 'vue';
 import { isEmpty } from 'ol/extent.js';
 import { createModalAction } from '@vcmap/ui';
 import { name } from '../../package.json';
-// import AttributeWindow, { defaultAttributeTablePosition } from './attributeTable.vue';
 import RenameDialog from './renameDialog.vue';
-import { createExportSelectedAction } from '../util/actionHelper.js';
+import {
+  createExportSelectedAction,
+  createImportAction,
+} from '../util/actionHelper.js';
 
 /**
  * @typedef {Object} SimpleDrawingItem
@@ -66,15 +69,33 @@ function isFeatureOfType(feature, categoryType) {
 
 /**
  * @param {import("ol").Feature} feature
+ * @param {import("@vcmap/core").VectorLayer} layer
  */
-function setTitleOnFeature(feature) {
+function setTitleOnFeature(feature, layer) {
   const geometry = feature.getGeometry();
   let typeName = 'Unknown';
   if (geometry) {
     typeName = geometry.get('_vcsGeomType') ?? geometry.getType();
   }
 
-  feature.set('title', `drawing.geometry.${typeName}`);
+  let featureName;
+  let count = 0;
+
+  const sameTypeFeaturesNames = new Set(
+    layer
+      .getFeatures()
+      .filter((f) => f.getGeometry().getType() === typeName)
+      .map((f) => f.get('title')),
+  );
+
+  do {
+    count += 1;
+    if (!sameTypeFeaturesNames.has(`${typeName}-${count}`)) {
+      featureName = `${typeName}-${count}`;
+    }
+  } while (!featureName);
+
+  feature.set('title', featureName);
 }
 
 /**
@@ -106,6 +127,13 @@ class SimpleEditorCategory extends Category {
     this._layer = layer;
     const source = layer.getSource();
 
+    // In case the collection already has layers
+    [...this.collection].forEach((item) => {
+      if (!this._layer.getFeatureById(item.name)) {
+        this._itemAdded(item);
+      }
+    });
+
     const sourceListeners = [
       source.on('removefeature', ({ feature }) => {
         const item = this.collection.getByKey(feature.getId());
@@ -118,29 +146,13 @@ class SimpleEditorCategory extends Category {
           isFeatureOfType(feature, this._categoryType) &&
           !this.collection.hasKey(feature.getId())
         ) {
-          setTitleOnFeature(feature);
+          setTitleOnFeature(feature, layer);
           this.collection.add({
             name: feature.getId(),
             feature,
           });
         }
       }),
-      // XXX remove and add feature again...
-      // source.on('changefeature', (feature) => {
-      //   const item = this.collection.get(feature.getId());
-      //   const isFeature = isFeatureOfType(feature, this._categoryType);
-      //   if (item && !isFeature) {
-      //     this.collection.remove(item);
-      //   } else if (isFeature && !item) {
-      //     this.collection.add({
-      //       name: feature.getId(),
-      //       feature,
-      //     });
-      //   }
-      //   if (item.title !== feature.get('title')) {
-      //     item.title = feature.get('title');
-      //   }
-      // }),
     ];
 
     this._layerListeners = () => {
@@ -154,8 +166,16 @@ class SimpleEditorCategory extends Category {
   }
 
   _itemAdded(item) {
+    // Is needed because in core the feature first gets removed, which triggers the source listener above and ends in an event trigger cicle that does not stop.
+    // If in core intead of removing, just checking if it is already existing AND set item.name as features id ->>> no need to override original function
     if (!this._layer.getFeatureById(item.name)) {
-      this._layer.addFeatures([item.feature]);
+      let { feature } = item;
+      if (!(feature instanceof Feature)) {
+        const features = parseGeoJSON(feature);
+        feature = Array.isArray(features) ? features[0] : features;
+      }
+      feature.setId(item.name);
+      this._layer.addFeatures([feature]);
     }
   }
 
@@ -215,7 +235,10 @@ function itemMappingFunction(
         hidden = true;
         this.icon = 'mdi-eye-off';
         if (manager.currentFeatures.value.includes(featureItem.feature)) {
-          manager.currentSession.value.clearSelection?.(); // TODO maybe not clear?
+          const newSelection = manager.currentFeatures.value.filter(
+            (feature) => feature.getId() !== featureItem.feature.getId(),
+          );
+          manager.currentSession.value.setCurrentFeatures(newSelection);
         }
       } else {
         layer.featureVisibility.showObjects([featureItem.name]);
@@ -292,6 +315,12 @@ function itemMappingFunction(
     {
       name: 'drawing.category.remove',
       callback() {
+        if (manager.currentFeatures.value.includes(featureItem.feature)) {
+          const newFeatures = manager.currentFeatures.value.filter(
+            (feature) => feature.getId() !== featureId,
+          );
+          manager.currentFeatures.value = newFeatures;
+        }
         layer.removeFeaturesById([featureId]);
       },
     },
@@ -324,16 +353,12 @@ function syncSelection(manager, categoryUiItem, layer) {
       if (manager.currentLayer.value !== layer) {
         manager.currentLayer.value = layer;
       }
-      if (!manager.currentSession.value?.type !== SessionType.SELECT) {
-        // TODO dont change edit geometry?
+      if (manager.currentSession.value?.type !== SessionType.SELECT) {
         manager.startSelectSession();
       }
-
-      if (selection.value.length) {
-        manager.currentSession.value.setCurrentFeatures(
-          layer.getFeaturesById(selection.value.map((i) => i.name)),
-        );
-      }
+      manager.currentSession.value.setCurrentFeatures(
+        layer.getFeaturesById(selection.value.map((i) => i.name)),
+      );
     }
   });
   const featureWatcher = watch(manager.currentFeatures, () => {
@@ -365,10 +390,11 @@ async function createCategory(manager, vcsApp, categoryType) {
   let someHidden = !!Object.keys(layer.featureVisibility.hiddenObjects).length;
 
   const hideAllAction = {
-    name: 'hideAllAction',
+    name: 'hide-all',
+    title: someHidden ? 'drawing.category.showAll' : 'drawing.category.hideAll',
     icon: someHidden ? 'mdi-eye-off' : 'mdi-eye',
     callback() {
-      if (!someHidden) {
+      if (!someHidden && layer.getFeatures()?.length) {
         layer.featureVisibility.hideObjects(
           layer.getFeatures().map((feature) => feature.getId()),
         );
@@ -376,9 +402,11 @@ async function createCategory(manager, vcsApp, categoryType) {
           manager.currentSession.value.clearSelection?.();
         }
         this.icon = 'mdi-eye-off';
+        this.title = 'drawing.category.showAll';
       } else {
         layer.featureVisibility.clearHiddenObjects();
         this.icon = 'mdi-eye';
+        this.title = 'drawing.category.hideAll';
       }
     },
   };
@@ -392,9 +420,20 @@ async function createCategory(manager, vcsApp, categoryType) {
         someHidden = !!Object.keys(layer.featureVisibility.hiddenObjects)
           .length;
         hideAllAction.icon = someHidden ? 'mdi-eye-off' : 'mdi-eye';
+        hideAllAction.title = someHidden
+          ? 'drawing.category.showAll'
+          : 'drawing.category.hideAll';
       }
     },
   );
+
+  const { action: exportAction, destroy: destroyExportAction } =
+    createExportSelectedAction(
+      manager,
+      'drawing-category-exportSelected',
+      true,
+      true,
+    );
 
   const { collectionComponent: categoryUiItem, category } =
     await vcsApp.categoryManager.requestCategory(
@@ -404,10 +443,12 @@ async function createCategory(manager, vcsApp, categoryType) {
         title: categoryTitle[categoryType],
         categoryType,
         layer,
+        featureProperty: 'feature',
       },
       name,
       {
         selectable: true,
+        overflowCount: 3,
       },
     );
 
@@ -427,7 +468,8 @@ async function createCategory(manager, vcsApp, categoryType) {
           );
         },
       },
-      createExportSelectedAction(manager, 'drawing-category-exportSelected'),
+      createImportAction(vcsApp, manager, 'drawing-category-import'),
+      exportAction,
       {
         name: 'drawing.category.removeSelected',
         callback() {
@@ -443,60 +485,10 @@ async function createCategory(manager, vcsApp, categoryType) {
         },
       },
       hideAllAction,
-      // {
-      //   name: 'Show Attributes',
-      //   callback() {
-      //     if (!vcsApp.windowManager.has(attributeWindowId)) {
-      //       vcsApp.windowManager.add({
-      //         position: defaultAttributeTablePosition,
-      //         provides: {
-      //           features,
-      //           itemSelected({ item, value }) {
-      //             if (manager.currentLayer.value !== layer) {
-      //               manager.currentLayer.value = layer;
-      //             }
-      //             if (!manager.currentSession.value?.type !== SessionType.SELECT) {
-      //               manager.startSelectSession();
-      //             } else if (manager.currentEditorSession.value) {
-      //               manager.stopEditing();
-      //             }
-      //             const { currentFeatures } = manager.currentSession.value;
-      //             const hasFeature = currentFeatures.some(feature => feature.getId() === item.name); // XXX Add hasFeatureId to SelectFeaturesSessions API?
-      //             if (value && !hasFeature) {
-      //               const feature = manager.currentLayer.value.getFeatureById(item.name);
-      //               currentFeatures.push(feature);
-      //               manager.currentSession.value.setCurrentFeatures(currentFeatures);
-      //             } else if (hasFeature) {
-      //               manager.currentSession.value.setCurrentFeatures(
-      //                 currentFeatures.filter(f => f.getId() !== item.name),
-      //               );
-      //             }
-      //           },
-      //         },
-      //         component: AttributeWindow,
-      //         slot: WindowSlot.DETACHED,
-      //         state: {
-      //           id: attributeWindowId,
-      //           headerTitle: category.name,
-      //         },
-      //       }, name);
-      //     }
-      //   },
-      // },
     ],
     name,
+    [categoryUiItem.id],
   );
-
-  // const attributeWindowId = 'simpleDrawingAttributeWindowId';
-  const features = shallowRef([...category.collection].map((i) => i.feature));
-  const listeners = [
-    category.collection.added.addEventListener(() => {
-      features.value = [...category.collection].map((i) => i.feature);
-    }),
-    category.collection.removed.addEventListener(() => {
-      features.value = [...category.collection].map((i) => i.feature);
-    }),
-  ];
 
   vcsApp.categoryManager.addMappingFunction(
     () => {
@@ -509,18 +501,17 @@ async function createCategory(manager, vcsApp, categoryType) {
 
   const selectionWatchers = syncSelection(manager, categoryUiItem, layer);
   return () => {
-    listeners.forEach((cb) => {
-      cb();
-    });
     selectionWatchers();
     hideListener();
+    vcsApp.categoryManager.removeOwner(name);
+    destroyExportAction();
   };
 }
 
 /**
  * @param {EditorManager} manager
  * @param {import("@vcmap/ui").VcsUiApp} app
- * @returns {function():void}
+ * @returns {Promise<function():void>}
  */
 export async function setupSimpleCategories(manager, app) {
   const listeners = await Promise.all(

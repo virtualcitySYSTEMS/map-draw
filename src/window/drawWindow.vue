@@ -10,44 +10,41 @@
         <feature-transforms
           v-if="currentTransformationMode"
           :transformation-mode="currentTransformationMode"
+          :feature-properties="featureProperties"
+          :allow-z-input="is3D"
         />
-        <div v-else class="px-2 py-1">
+        <div v-else class="px-1 py-1">
           {{ $t('drawing.modify.info') }}
         </div>
       </div>
     </VcsFormSection>
     <VcsFormSection heading="drawing.style.header">
-      <StyleComponent />
+      <StyleComponent :feature-properties="featureProperties" />
     </VcsFormSection>
-    <VcsFormSection heading="drawing.parameters.header">
-      <feature-parameters />
-    </VcsFormSection>
+    <VcsVectorPropertiesComponent
+      :value="featureProperties"
+      :show3-d-properties="is3D"
+      @propertyChange="updateFeatureProperties"
+      :value-default="defaultVectorProperties"
+      :properties="['altitudeMode', 'classificationType', 'extrudedHeight']"
+      :hide-dividers="true"
+    />
   </v-sheet>
 </template>
 
 <script>
   import { VSheet } from 'vuetify/lib';
-  import { VcsFormSection } from '@vcmap/ui';
-  import { unByKey } from 'ol/Observable.js';
+  import { VcsFormSection, VcsVectorPropertiesComponent } from '@vcmap/ui';
+  import { inject, ref, watch, onUnmounted, provide, computed } from 'vue';
   import {
-    inject,
-    ref,
-    watch,
-    onUnmounted,
-    provide,
-    onMounted,
-    computed,
-  } from 'vue';
-  import { GeometryType, SessionType, TransformationMode } from '@vcmap/core';
+    CesiumMap,
+    GeometryType,
+    SessionType,
+    TransformationMode,
+    VectorProperties,
+  } from '@vcmap/core';
   import StyleComponent from './styleComponent.vue';
-  import FeatureParameters from './featureParameters.vue';
   import FeatureTransforms from './featureTransforms.vue';
-
-  const singleFeatureGeometryComponentId = {
-    Circle: 'CircleGeometryComponent',
-    Point: 'PointGeometryComponent',
-    BBox: 'RectangleGeometryComponent',
-  };
 
   export const TransformationIcons = {
     [TransformationMode.TRANSLATE]: 'mdi-axis-arrow',
@@ -75,7 +72,6 @@
     );
     return [
       TransformationMode.TRANSLATE,
-      TransformationMode.EXTRUDE,
       ...(isSinglePoint || isSingleCircle || isBboxSelected
         ? []
         : [TransformationMode.ROTATE]),
@@ -83,89 +79,104 @@
     ];
   }
 
-  /**
-   * @param {import('ol').Feature} feature The feature that is selected.
-   * @param {import('vue').Ref<any>} singleFeatureGeometryComponent The ref that holds the id of the currently selected geometry.
-   * @param {import('vue').Ref<Boolean>} isBbox If the geometry is bbox.
-   * @returns {Function} Function to delete geometry change listener on the provided feature.
-   */
-  function updateGeometryComponent(
-    feature,
-    singleFeatureGeometryComponent,
-    isBbox,
-  ) {
-    function setComponentId() {
-      const geometry = feature?.getGeometry();
-      const geometryType = geometry?.getType?.();
-      if (
-        geometryType === GeometryType.Polygon &&
-        geometry.get('_vcsGeomType') === GeometryType.BBox
-      ) {
-        singleFeatureGeometryComponent.value =
-          singleFeatureGeometryComponentId.BBox;
-        isBbox.value = true;
-      } else {
-        singleFeatureGeometryComponent.value =
-          singleFeatureGeometryComponentId[geometryType];
-        isBbox.value = false;
-      }
-    }
-    setComponentId();
-
-    const eventKey = feature.on('change:geometry', setComponentId);
-    return () => {
-      unByKey(eventKey);
-    };
-  }
-
   export default {
     components: {
       FeatureTransforms,
-      FeatureParameters,
       VSheet,
       VcsFormSection,
+      VcsVectorPropertiesComponent,
       StyleComponent,
     },
-    name: 'FeaturesPropertyWindow',
+    name: 'DrawWindow',
     setup() {
+      const vcsApp = inject('vcsApp');
       /** @type {import("../editorManager").EditorManager} */
       const editorManager = inject('manager');
       const {
         currentFeatures: features,
         currentSession: session,
         currentEditSession: editSession,
+        currentLayer: layer,
       } = editorManager;
-      provide('features', features);
-      const singleFeatureGeometryComponent = ref(null);
-      /** If the geometry is bbox. Helps to distinguish between bbox and recangle. */
-      const isBbox = ref(false);
-      const currentTransformationMode = ref();
 
-      let featureListener = () => {};
-      function updateProperyWindow() {
-        featureListener();
-        const sessionType = session.value?.type;
-        if (sessionType) {
-          featureListener = updateGeometryComponent(
-            features.value[0],
-            singleFeatureGeometryComponent,
-            isBbox,
-          );
+      provide('features', features);
+      const featureProperties = ref();
+
+      watch(
+        features,
+        () => {
+          featureProperties.value =
+            layer.value.vectorProperties.getValuesForFeatures(features.value);
+        },
+        { immediate: true },
+      );
+
+      /**
+       * Sets the changed vector property options on the features. Also handles side effects.
+       * @param {import("@vcmap/core").VectorPropertiesOptions} update New property values from user input.
+       */
+      async function updateFeatureProperties(update) {
+        const extrusionLikePropertyKeys = [
+          'extrudedHeight',
+          'skirt',
+          'storeysAboveGround',
+          'storeysBelowGround',
+          'storeyHeightsAboveGround',
+          'storeyHeightsBelowGround',
+        ];
+        const setsExtrusionLikePropertyKeys =
+          !!extrusionLikePropertyKeys.filter(
+            (key) => Object.keys(update).includes(key) && !!update[key],
+          ).length;
+        if (
+          setsExtrusionLikePropertyKeys &&
+          featureProperties.value.altitudeMode !== 'absolute'
+        ) {
+          update.altitudeMode = 'absolute';
+        } else if (update.altitudeMode === 'clampToGround') {
+          extrusionLikePropertyKeys
+            .filter((key) => !!featureProperties.value[key])
+            .forEach((key) => {
+              update[key] = 0;
+            });
         }
+        // when in create mode and changing altitude mode, this is triggered, but currentFeatures is empty array.
+        if (update.altitudeMode === 'absolute' && features?.length) {
+          await editorManager.placeCurrentFeaturesOnTerrain();
+        }
+
+        layer.value.vectorProperties.setValuesForFeatures(
+          update,
+          features.value,
+        );
+        featureProperties.value =
+          layer.value.vectorProperties.getValuesForFeatures(features.value);
       }
+
+      const currentTransformationMode = ref();
+      const is3D = ref(false);
+
+      function updateIs3D() {
+        is3D.value = vcsApp.maps.activeMap instanceof CesiumMap;
+      }
+      const mapActivatedListener =
+        vcsApp.maps.mapActivated.addEventListener(updateIs3D);
+      updateIs3D();
 
       const isGeometryEditing = computed(
         () => editSession.value?.type === SessionType.EDIT_GEOMETRY,
       );
 
-      const editModeListener = () => {};
+      let editModeListener = () => {};
       watch(editSession, () => {
         editModeListener();
         currentTransformationMode.value = editSession.value?.mode || null;
         if (currentTransformationMode.value) {
-          editSession.value.modeChanged.addEventListener((mode) => {
-            currentTransformationMode.value = mode;
-          });
+          editModeListener = editSession.value.modeChanged.addEventListener(
+            (mode) => {
+              currentTransformationMode.value = mode;
+            },
+          );
         }
       });
 
@@ -207,7 +218,7 @@
           allowedActions.unshift({
             name: 'editGeometry',
             title: `drawing.geometry.edit`,
-            icon: '$vcsPen',
+            icon: '$vcsEditVertices',
             active: isGeometryEditing.value,
             callback: () => {
               toggleEditGeometrySession();
@@ -218,31 +229,22 @@
         return allowedActions;
       });
 
-      let featureWatcher = () => {};
-      onMounted(() => {
-        featureWatcher = watch(features, updateProperyWindow);
-        updateProperyWindow();
-      });
-
       onUnmounted(() => {
-        featureWatcher();
-        featureListener();
+        mapActivatedListener();
         editModeListener();
         editorManager.stopEditing();
       });
 
       return {
-        singleFeatureGeometryComponent,
-        features,
+        featureProperties,
         session,
         SessionType,
-        isBbox,
-        isGeometryEditing,
-        toggleEditGeometrySession,
         currentTransformationMode,
         TransformationMode,
-        TransformationIcons,
         availableModifyActions,
+        is3D,
+        updateFeatureProperties,
+        defaultVectorProperties: VectorProperties.getDefaultOptions(),
       };
     },
   };
