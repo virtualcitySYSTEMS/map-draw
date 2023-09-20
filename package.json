@@ -29,7 +29,8 @@
     "dist/",
     "plugin-assets/",
     "LICENSE.md",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "exports": {
     ".": "./src/index.js",
