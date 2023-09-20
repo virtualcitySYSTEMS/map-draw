@@ -15,6 +15,9 @@ import {
   CesiumMap,
   getFlatCoordinatesFromGeometry,
   TransformationMode,
+  vectorStyleSymbol,
+  VectorStyleItem,
+  getStyleOptions,
 } from '@vcmap/core';
 import { Feature } from 'ol';
 import { LineString, Point, Polygon } from 'ol/geom';
@@ -58,10 +61,17 @@ function createSimpleEditorLayer(app) {
  * @param {import("@vcmap/core").VcsApp} app
  * @param {import("@vcmap/core").EditorSession} session
  * @param {import("vue").ShallowRef<Array<import("ol").Feature>>} currentFeatures
+ * @param {import("@vcmap/core").VectorLayer} layer
  * @param {import("ol").Feature} templateFeature
  * @returns {function():void}
  */
-function setupSessionListener(app, session, currentFeatures, templateFeature) {
+function setupSessionListener(
+  app,
+  session,
+  currentFeatures,
+  layer,
+  templateFeature,
+) {
   const listeners = [];
   if (session.type === SessionType.SELECT) {
     listeners.push(
@@ -75,15 +85,17 @@ function setupSessionListener(app, session, currentFeatures, templateFeature) {
     listeners.push(
       session.featureCreated.addEventListener((newFeature) => {
         currentFeatures.value = [newFeature];
-        const style = templateFeature.getStyle()?.clone();
+        const style =
+          templateFeature.getStyle()?.clone() || layer.style.style.clone();
         const properties = templateFeature.getProperties();
         delete properties.geometry; // delete geomertry from template properties
         if (app.maps.activeMap instanceof OpenlayersMap) {
           properties.olcs_altitudeMode = 'clampToGround';
         }
-        if (style) {
-          currentFeatures.value[0].setStyle(style);
-        }
+        currentFeatures.value[0].setStyle(style);
+        currentFeatures.value[0][vectorStyleSymbol] = new VectorStyleItem(
+          getStyleOptions(style),
+        );
         if (Object.keys(properties).length) {
           currentFeatures.value[0].setProperties(properties);
         }
@@ -166,6 +178,7 @@ export function createSimpleEditorManager(app) {
         app,
         currentSession.value,
         currentFeatures,
+        currentLayer.value,
         templateFeature,
       );
     } else {

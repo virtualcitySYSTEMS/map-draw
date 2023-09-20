@@ -21,6 +21,9 @@
     getTextOptions,
     getImageStyleFromOptions,
     getTextFromOptions,
+    vectorStyleSymbol,
+    VectorStyleItem,
+    getStyleOptions,
   } from '@vcmap/core';
   import { Fill, Stroke } from 'ol/style.js';
   import { inject, onUnmounted, ref, watch } from 'vue';
@@ -49,6 +52,17 @@
       featureStyle = feature.getStyle();
     }
     return featureStyle || layerStyle;
+  }
+
+  /**
+   * Sets the style for a highlighted feature
+   * @param {import("ol").Feature} feature The feature to set the style on
+   * @param {import("ol/style").Style} style The style
+   */
+  function setFeatureStyle(feature, style) {
+    feature.setStyle(style); // XXX Should this be changed in the core? if feature highlighted -> setStyle() sets originalStyle
+    feature[originalStyle] = style;
+    feature[vectorStyleSymbol] = new VectorStyleItem(getStyleOptions(style));
   }
 
   /**
@@ -322,8 +336,7 @@
           manager.currentFeatures.value.forEach((feature) => {
             const style = getFeatureStyle(feature, manager.currentLayer.value);
             style.setFill(update ? new Fill(update) : null);
-            feature.setStyle(style);
-            feature[originalStyle] = style; // XXX Should this be changed in the core? if feature highlighted -> setStyle() sets originalStyle
+            setFeatureStyle(feature, style);
           });
         },
         updateStroke(update) {
@@ -331,8 +344,7 @@
           manager.currentFeatures.value.forEach((feature) => {
             const style = getFeatureStyle(feature, manager.currentLayer.value);
             style.setStroke(update ? new Stroke(update) : null);
-            feature.setStyle(style);
-            feature[originalStyle] = style;
+            setFeatureStyle(feature, style);
           });
         },
         updateText(update) {
@@ -344,8 +356,7 @@
               newText = getTextFromOptions(update);
             }
             style.setText(newText || null);
-            feature.setStyle(style);
-            feature[originalStyle] = style;
+            setFeatureStyle(feature, style);
           });
         },
         updateImage(update) {
@@ -357,8 +368,7 @@
               newImage = getImageStyleFromOptions(update);
             }
             style.setImage(newImage || null);
-            feature.setStyle(style);
-            feature[originalStyle] = style;
+            setFeatureStyle(feature, style);
           });
         },
       };

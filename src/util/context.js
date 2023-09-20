@@ -2,6 +2,7 @@ import { SessionType, vcsLayerName } from '@vcmap/core';
 import {
   TransformationIcons,
   getAllowedTransformationModes,
+  getGeometryTypes,
 } from '../window/drawWindow.vue';
 import { drawPluginWindowId } from '../window/setup.js';
 import {
@@ -53,7 +54,11 @@ export default function addContextMenu(app, manager, owner, toggleWindow) {
           },
         });
       }
-      const allowedModes = getAllowedTransformationModes(editFeatures);
+      const geometryTypes = getGeometryTypes(editFeatures);
+      const allowedModes = getAllowedTransformationModes(
+        geometryTypes,
+        editFeatures.length,
+      );
       allowedModes.forEach((mode) => {
         contextEntries.push({
           id: `draw-${mode}`,

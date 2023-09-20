@@ -1,5 +1,5 @@
 import { GeometryType, TransformationMode, moduleIdSymbol } from '@vcmap/core';
-import { version, name } from '../package.json';
+import { version, name, mapVersion } from '../package.json';
 import { createSimpleEditorManager } from './editorManager.js';
 import { addToolButtons } from './util/toolbox.js';
 import { setupKeyListeners } from './util/keyListeners.js';
@@ -16,6 +16,9 @@ export default function drawingPlugin() {
     },
     get version() {
       return version;
+    },
+    get mapVersion() {
+      return mapVersion;
     },
     getDefaultOptions() {
       return {};

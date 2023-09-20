@@ -26,7 +26,7 @@
       :show3-d-properties="is3D"
       @propertyChange="updateFeatureProperties"
       :value-default="defaultVectorProperties"
-      :properties="['altitudeMode', 'classificationType', 'extrudedHeight']"
+      :properties="availableVectorProperties"
       :hide-dividers="true"
     />
   </v-sheet>
@@ -54,22 +54,38 @@
   };
 
   /**
+   * Returns a Set with all geometry types of the provided features
+   * @param {import("ol").Feature[]} features Array of ol features
+   * @returns {Set<GeometryType>} Set with GeometryTypes
+   */
+  export function getGeometryTypes(features) {
+    return features.reduce((acc, feature) => {
+      const geometryType = feature.getGeometry().getType();
+
+      if (
+        geometryType === GeometryType.Polygon &&
+        feature.getGeometry().get('_vcsGeomType') === GeometryType.BBox
+      ) {
+        acc.add(GeometryType.BBox);
+      } else {
+        acc.add(geometryType);
+      }
+      return acc;
+    }, new Set());
+  }
+
+  /**
    * Returns all the available transformation modes for the provided features.
-   * @param {Array<import("ol").Feature>} features The selected features to which transformation options should be shown.
+   * @param {Set<GeometryType>} geometryTypes The currently selected geometry types.
+   * @param {number} nFeatures The number of selected features.
    * @returns {Array<TransformationMode>} The allowed transformation modes.
    */
-  export function getAllowedTransformationModes(features) {
+  export function getAllowedTransformationModes(geometryTypes, nFeatures) {
     const isSinglePoint =
-      features.length === 1 &&
-      features[0].getGeometry().getType() === GeometryType.Point;
+      nFeatures === 1 && geometryTypes.has(GeometryType.Point);
     const isSingleCircle =
-      features.length === 1 &&
-      features[0].getGeometry().getType() === GeometryType.Circle;
-    const isBboxSelected = features.every(
-      (feature) =>
-        feature.getGeometry().getType() === GeometryType.Polygon &&
-        feature.getGeometry().get('_vcsGeomType') === GeometryType.BBox,
-    );
+      nFeatures === 1 && geometryTypes.has(GeometryType.Circle);
+    const isBboxSelected = geometryTypes.has(GeometryType.BBox);
     return [
       TransformationMode.TRANSLATE,
       ...(isSinglePoint || isSingleCircle || isBboxSelected
@@ -98,6 +114,9 @@
         currentEditSession: editSession,
         currentLayer: layer,
       } = editorManager;
+
+      const availableModifyActions = ref([]);
+      const availableVectorProperties = ref([]);
 
       provide('features', features);
       const featureProperties = ref();
@@ -199,8 +218,19 @@
         }
       }
 
-      const availableModifyActions = computed(() => {
-        const allowedModes = getAllowedTransformationModes(features.value);
+      /**
+       * Set of currently selected geometry types
+       * @type {import("vue").ComputedRef<Set<GeometryType>>}
+       */
+      const currentGeometryTypes = computed(() =>
+        getGeometryTypes(features.value),
+      );
+
+      function getAllowedModifyActions() {
+        const allowedModes = getAllowedTransformationModes(
+          currentGeometryTypes.value,
+          features.value.length,
+        );
 
         const allowedActions = allowedModes.map((mode) => {
           return {
@@ -227,11 +257,36 @@
         }
 
         return allowedActions;
-      });
+      }
+
+      function getAllowedVectorProperties() {
+        const properties = ['altitudeMode', 'extrudedHeight'];
+        const geomTypes = currentGeometryTypes.value;
+        if (geomTypes.size > 1 || !geomTypes.has(GeometryType.Point)) {
+          properties.push('classificationType');
+        }
+        return properties;
+      }
+
+      // watcher instead of computeds to avoid triggerung through currentGeometryTypes AND features.
+      const geometryTypesWatcher = watch(
+        currentGeometryTypes,
+        (curr, prev) => {
+          if (
+            curr.size !== prev?.size ||
+            ![...curr].every((value) => prev?.has(value))
+          ) {
+            availableModifyActions.value = getAllowedModifyActions();
+            availableVectorProperties.value = getAllowedVectorProperties();
+          }
+        },
+        { immediate: true },
+      );
 
       onUnmounted(() => {
         mapActivatedListener();
         editModeListener();
+        geometryTypesWatcher();
         editorManager.stopEditing();
       });
 
@@ -242,6 +297,7 @@
         currentTransformationMode,
         TransformationMode,
         availableModifyActions,
+        availableVectorProperties,
         is3D,
         updateFeatureProperties,
         defaultVectorProperties: VectorProperties.getDefaultOptions(),

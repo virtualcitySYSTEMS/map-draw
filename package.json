@@ -18,7 +18,7 @@
     "test": "vitest",
     "coverage": "vitest run --coverage"
   },
-  "author": "Virtual City Systems",
+  "author": "Tobias Krauth <tkrauth@vc.systems>",
   "license": "MIT",
   "keywords": [
     "vcmap",
@@ -44,19 +44,20 @@
   },
   "prettier": "@vcsuite/eslint-config/prettier.js",
   "peerDependencies": {
-    "@vcmap-cesium/engine": "~2.4.3",
-    "@vcmap/core": "^5.0.0-rc.37",
-    "@vcmap/ui": "^5.0.0-rc.30",
-    "ol": "~7.5.1",
+    "@vcmap-cesium/engine": "^4.0.3",
+    "@vcmap/core": "^5.0.0",
+    "@vcmap/ui": "^5.0.0",
+    "ol": "^7.5.2",
     "vue": "~2.7.3",
     "vuetify": "~2.6.7"
   },
   "devDependencies": {
-    "@vcmap/plugin-cli": "^2.1.11",
+    "@vcmap/plugin-cli": "^2.1.12",
     "@vcsuite/eslint-config": "^3.0.3",
     "@vitest/coverage-c8": "^0.29.2",
     "jest-canvas-mock": "^2.4.0",
     "jsdom": "^21.1.0",
     "vitest": "^0.29.2"
-  }
+  },
+  "mapVersion": "^5.0.0"
 }
