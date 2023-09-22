@@ -146,7 +146,9 @@ class SimpleEditorCategory extends Category {
           isFeatureOfType(feature, this._categoryType) &&
           !this.collection.hasKey(feature.getId())
         ) {
-          setTitleOnFeature(feature, layer);
+          if (!feature.get('title')) {
+            setTitleOnFeature(feature, layer);
+          }
           this.collection.add({
             name: feature.getId(),
             feature,
