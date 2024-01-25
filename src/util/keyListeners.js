@@ -23,7 +23,6 @@ export default function addKeyListeners(manager) {
         }
         break;
       case 'Delete':
-        // XXX Copy paste from simple category (second time)
         if (
           currentLayer.value === layer &&
           currentSession.value?.currentFeatures?.length

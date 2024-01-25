@@ -93,13 +93,20 @@ function setupSessionListener(
           properties.olcs_altitudeMode = 'clampToGround';
         }
         currentFeatures.value[0].setStyle(style);
+        const styleOptions = getStyleOptions(style);
+        if (styleOptions.text?.text) {
+          styleOptions.label = styleOptions.text.text;
+        }
         currentFeatures.value[0][vectorStyleSymbol] = new VectorStyleItem(
-          getStyleOptions(style),
+          styleOptions,
         );
         if (Object.keys(properties).length) {
           currentFeatures.value[0].setProperties(properties);
         }
       }),
+      () => {
+        app.maps.eventHandler.featureInteraction.pullPickedPosition = 0;
+      },
     );
 
     listeners.push(
@@ -270,6 +277,7 @@ export function createSimpleEditorManager(app) {
         startCreateFeatureSession(app, currentLayer.value, geometryType),
       );
       currentFeatures.value = [templateFeature];
+      app.maps.eventHandler.featureInteraction.pullPickedPosition = 0.05;
     },
     startSelectSession(features) {
       setCurrentSession(

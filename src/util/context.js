@@ -1,23 +1,33 @@
 import { SessionType, vcsLayerName } from '@vcmap/core';
 import {
-  TransformationIcons,
-  getAllowedTransformationModes,
-  getGeometryTypes,
-} from '../window/drawWindow.vue';
-import { drawPluginWindowId } from '../window/setup.js';
-import {
-  createDeleteSelectedAction,
-  createExportSelectedAction,
-} from './actionHelper.js';
+  EditorTransformationIcons,
+  createListItemBulkAction,
+  getAllowedEditorTransformationModes,
+} from '@vcmap/ui';
+import { drawPluginWindowId } from './windowHelper.js';
+import { createDeleteSelectedAction, exportFeatures } from './actionHelper.js';
 
 /**
  * Adds edit actions to the context menu.
  * @param {import("@vcmap/ui").VcsUiApp} app The VcsUiApp instance
  * @param {EditorManager} manager The editor manager
  * @param {string | symbol} owner The owner of the context menu entries.
- * @param {function(import("ol").Feature[]):void} toggleWindow Function to toggle the draw window.
+ * @param {function(import("ol").Feature[]):void} editSelection Function to open collection component editor for selected features.
+ * @returns {function():void} Function to destroy the context menu entries.
  */
-export default function addContextMenu(app, manager, owner, toggleWindow) {
+export default function addContextMenu(app, manager, owner, editSelection) {
+  const { action: exportAction, destroy: destroyExportAction } =
+    createListItemBulkAction(manager.currentFeatures, {
+      callback: () => {
+        exportFeatures(
+          manager.currentFeatures.value,
+          manager.currentLayer.value,
+        );
+      },
+      name: 'list.export',
+      icon: '$vcsExport',
+    });
+
   app.contextMenuManager.addEventHandler((event) => {
     const contextEntries = [];
     if (
@@ -41,7 +51,7 @@ export default function addContextMenu(app, manager, owner, toggleWindow) {
         name: 'drawing.contextMenu.editProperties',
         icon: '$vcsEdit',
         callback() {
-          toggleWindow();
+          editSelection();
         },
       });
       if (editFeatures.length === 1) {
@@ -54,8 +64,13 @@ export default function addContextMenu(app, manager, owner, toggleWindow) {
           },
         });
       }
-      const geometryTypes = getGeometryTypes(editFeatures);
-      const allowedModes = getAllowedTransformationModes(
+      const geometryTypes = new Set(
+        editFeatures.map(
+          (f) =>
+            f.getGeometry().get('_vcsGeomType') ?? f.getGeometry().getType(),
+        ),
+      );
+      const allowedModes = getAllowedEditorTransformationModes(
         geometryTypes,
         editFeatures.length,
       );
@@ -63,19 +78,16 @@ export default function addContextMenu(app, manager, owner, toggleWindow) {
         contextEntries.push({
           id: `draw-${mode}`,
           name: `drawing.transform.${mode}`,
-          icon: TransformationIcons[mode],
+          icon: EditorTransformationIcons[mode],
           callback() {
             if (!app.windowManager.has(drawPluginWindowId)) {
-              toggleWindow();
+              editSelection();
             }
             manager.startTransformSession(mode);
           },
         });
       });
-      contextEntries.push(
-        createExportSelectedAction(manager, 'draw-context-exportSelected')
-          .action,
-      );
+      contextEntries.push(exportAction);
       contextEntries.push(
         createDeleteSelectedAction(manager, 'draw-context-delete'),
       );
@@ -84,4 +96,8 @@ export default function addContextMenu(app, manager, owner, toggleWindow) {
     }
     return contextEntries;
   }, owner);
+
+  return () => {
+    destroyExportAction();
+  };
 }
