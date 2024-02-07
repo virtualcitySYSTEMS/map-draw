@@ -21,6 +21,7 @@ import {
 } from '@vcmap/core';
 import { Feature } from 'ol';
 import { LineString, Point, Polygon } from 'ol/geom';
+import { unByKey } from 'ol/Observable.js';
 
 /**
  * @typedef {Object} EditorManager
@@ -252,30 +253,41 @@ export function createSimpleEditorManager(app) {
         geometryType !== templateFeature.getGeometry()?.getType()
       ) {
         let geometry;
-        let id;
+        const id = `drawing.create.${geometryType}`;
         // create dummy geomtery. Template feature must have geometry, otherwise property components can not recognize what type of feature will be drawn next.
         // alternative would be to pass through the geometry type (in e.g. styleComponent), but might be more errorprone and complex
         switch (geometryType) {
           case GeometryType.Point:
             geometry = new Point([]);
-            id = `drawing.create.${geometryType}`;
             break;
           case GeometryType.LineString:
             geometry = new LineString([]);
-            id = `drawing.create.${geometryType}`;
             break;
           default:
             geometry = new Polygon([]);
-            id = `drawing.create.${geometryType}`;
             break;
         }
         templateFeature = new Feature({ geometry });
         templateFeature.setId(id);
       }
 
-      setCurrentSession(
-        startCreateFeatureSession(app, currentLayer.value, geometryType),
+      const session = startCreateFeatureSession(
+        app,
+        currentLayer.value,
+        geometryType,
       );
+      const templateFeatureListener = templateFeature.on(
+        'propertychange',
+        ({ key }) => {
+          if (key === 'olcs_altitudeMode') {
+            session.featureAltitudeMode = templateFeature.get(key);
+          }
+        },
+      );
+      session.stopped.addEventListener(() => {
+        unByKey(templateFeatureListener);
+      });
+      setCurrentSession(session);
       currentFeatures.value = [templateFeature];
       app.maps.eventHandler.featureInteraction.pullPickedPosition = 0.05;
     },
