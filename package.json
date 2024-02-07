@@ -61,5 +61,5 @@
     "resize-observer-polyfill": "^1.5.1",
     "vitest": "^1.0.1"
   },
-  "mapVersion": "^5.1.0"
+  "mapVersion": "^5.1"
 }

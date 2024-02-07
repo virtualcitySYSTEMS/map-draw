@@ -1,3 +1,7 @@
+# v2.0.1
+
+- fixes wrong picking location in clampToGround creation mode
+
 # v2.0.0
 
 - implements the new uniform select behavior

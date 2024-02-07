@@ -79,7 +79,7 @@ export function setupDrawWindow(manager, app) {
     (component) => {
       if (
         component.id === drawPluginWindowId &&
-        manager.currentSession.value.type === SessionType.CREATE &&
+        manager.currentSession.value?.type === SessionType.CREATE &&
         (manager.currentFeatures.value.length === 0 ||
           !manager.currentLayer.value?.getFeatureById(
             manager.currentFeatures.value[0]?.getId(),
