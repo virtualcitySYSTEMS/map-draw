@@ -1,3 +1,8 @@
+# v2.0.2
+
+- fixes context menu issues in creation & opening of windows.
+- fixes an issue where destroying the plugin would throw.
+
 # v2.0.1
 
 - fixes wrong picking location in clampToGround creation mode

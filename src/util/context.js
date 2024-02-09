@@ -27,7 +27,7 @@ export default function addContextMenu(app, manager, owner, editSelection) {
       name: 'list.export',
       icon: '$vcsExport',
     });
-
+  exportAction.disabled = false;
   app.contextMenuManager.addEventHandler((event) => {
     const contextEntries = [];
     if (
@@ -35,20 +35,33 @@ export default function addContextMenu(app, manager, owner, editSelection) {
       event.feature[vcsLayerName] === manager.currentLayer.value.name
     ) {
       let editFeatures = manager.currentFeatures.value;
-      if (manager.currentSession.value?.type !== SessionType.SELECT) {
-        manager.startSelectSession([event.feature]);
+      const isCreate =
+        manager.currentSession.value?.type === SessionType.CREATE;
+      if (
+        !isCreate &&
+        manager.currentSession.value?.type !== SessionType.SELECT
+      ) {
+        setTimeout(() => {
+          // timeout prevents right click on opened editor window
+          manager.startSelectSession([event.feature]);
+        }, 0);
         editFeatures = [event.feature];
       } else if (
+        manager.currentSession.value?.type === SessionType.SELECT &&
         !editFeatures.some(
           (feature) => feature.getId() === event.feature.getId(),
         )
       ) {
-        manager.currentSession.value.setCurrentFeatures([event.feature]);
+        setTimeout(() => {
+          // timeout prevents right click on opened editor window
+          manager.currentSession.value.setCurrentFeatures([event.feature]);
+        }, 0);
         editFeatures = [event.feature];
       }
       contextEntries.push({
         id: 'draw-edit_properties',
         name: 'drawing.contextMenu.editProperties',
+        disabled: isCreate,
         icon: '$vcsEdit',
         callback() {
           editSelection();
@@ -58,6 +71,7 @@ export default function addContextMenu(app, manager, owner, editSelection) {
         contextEntries.push({
           id: 'draw-edit_geometry',
           name: 'drawing.geometry.edit',
+          disabled: isCreate,
           icon: '$vcsEditVertices',
           callback() {
             manager.startEditSession();
@@ -77,6 +91,7 @@ export default function addContextMenu(app, manager, owner, editSelection) {
       allowedModes.forEach((mode) => {
         contextEntries.push({
           id: `draw-${mode}`,
+          disabled: isCreate,
           name: `drawing.transform.${mode}`,
           icon: EditorTransformationIcons[mode],
           callback() {
@@ -87,10 +102,14 @@ export default function addContextMenu(app, manager, owner, editSelection) {
           },
         });
       });
+      exportAction.disabled = isCreate;
       contextEntries.push(exportAction);
-      contextEntries.push(
-        createDeleteSelectedAction(manager, 'draw-context-delete'),
+      const deleteAction = createDeleteSelectedAction(
+        manager,
+        'draw-context-delete',
       );
+      deleteAction.disabled = isCreate;
+      contextEntries.push(deleteAction);
     } else {
       manager.currentSession.value?.clearSelection?.();
     }
