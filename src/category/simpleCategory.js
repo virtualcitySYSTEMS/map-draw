@@ -445,6 +445,11 @@ export async function createCategory(manager, vcsApp) {
         : 'drawing.category.showAll';
   }
 
+  const hideAllEventsKeys = [
+    layer.source.on('addfeature', updateHideAllAction),
+    layer.source.on('removefeature', updateHideAllAction),
+  ];
+
   const hideAllActionListeners = [
     layer.featureVisibility.changed.addEventListener((event) => {
       if (
@@ -454,8 +459,9 @@ export async function createCategory(manager, vcsApp) {
         updateHideAllAction();
       }
     }),
-    layer.source.on('addfeature', updateHideAllAction),
-    layer.source.on('removefeature', updateHideAllAction),
+    () => {
+      unByKey(hideAllEventsKeys);
+    },
   ];
 
   const { collectionComponent: categoryUiItem, category } =
