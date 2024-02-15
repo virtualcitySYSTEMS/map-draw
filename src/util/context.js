@@ -1,7 +1,7 @@
 import { SessionType, vcsLayerName } from '@vcmap/core';
 import {
-  EditorTransformationIcons,
   createListItemBulkAction,
+  EditorTransformationIcons,
   getAllowedEditorTransformationModes,
 } from '@vcmap/ui';
 import { drawPluginWindowId } from './windowHelper.js';
@@ -35,10 +35,12 @@ export default function addContextMenu(app, manager, owner, editSelection) {
       event.feature[vcsLayerName] === manager.currentLayer.value.name
     ) {
       let editFeatures = manager.currentFeatures.value;
-      const isCreate =
-        manager.currentSession.value?.type === SessionType.CREATE;
+      const disabled =
+        manager.currentSession.value?.type === SessionType.CREATE &&
+        event.feature === editFeatures[0];
+
       if (
-        !isCreate &&
+        !disabled &&
         manager.currentSession.value?.type !== SessionType.SELECT
       ) {
         setTimeout(() => {
@@ -61,7 +63,7 @@ export default function addContextMenu(app, manager, owner, editSelection) {
       contextEntries.push({
         id: 'draw-edit_properties',
         name: 'drawing.contextMenu.editProperties',
-        disabled: isCreate,
+        disabled,
         icon: '$vcsEdit',
         callback() {
           editSelection();
@@ -71,7 +73,7 @@ export default function addContextMenu(app, manager, owner, editSelection) {
         contextEntries.push({
           id: 'draw-edit_geometry',
           name: 'drawing.geometry.edit',
-          disabled: isCreate,
+          disabled,
           icon: '$vcsEditVertices',
           callback() {
             manager.startEditSession();
@@ -91,7 +93,7 @@ export default function addContextMenu(app, manager, owner, editSelection) {
       allowedModes.forEach((mode) => {
         contextEntries.push({
           id: `draw-${mode}`,
-          disabled: isCreate,
+          disabled,
           name: `drawing.transform.${mode}`,
           icon: EditorTransformationIcons[mode],
           callback() {
@@ -102,13 +104,13 @@ export default function addContextMenu(app, manager, owner, editSelection) {
           },
         });
       });
-      exportAction.disabled = isCreate;
+      exportAction.disabled = disabled;
       contextEntries.push(exportAction);
       const deleteAction = createDeleteSelectedAction(
         manager,
         'draw-context-delete',
       );
-      deleteAction.disabled = isCreate;
+      deleteAction.disabled = disabled;
       contextEntries.push(deleteAction);
     } else {
       manager.currentSession.value?.clearSelection?.();

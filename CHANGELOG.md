@@ -1,5 +1,9 @@
 # v2.0.2
 
+- fixes context menu to be disabled for current feature during creation.
+
+# v2.0.2
+
 - fixes context menu issues in creation & opening of windows.
 - fixes an issue where destroying the plugin would throw.
 
