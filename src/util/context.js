@@ -1,11 +1,16 @@
-import { SessionType, vcsLayerName } from '@vcmap/core';
 import {
-  createListItemBulkAction,
+  GeometryType,
+  getDefaultHighlightStyle,
+  SessionType,
+  vcsLayerName,
+  writeGeoJSON,
+} from '@vcmap/core';
+import {
+  downloadText,
   EditorTransformationIcons,
   getAllowedEditorTransformationModes,
 } from '@vcmap/ui';
 import { drawPluginWindowId } from './windowHelper.js';
-import { createDeleteSelectedAction, exportFeatures } from './actionHelper.js';
 
 /**
  * Adds edit actions to the context menu.
@@ -16,80 +21,61 @@ import { createDeleteSelectedAction, exportFeatures } from './actionHelper.js';
  * @returns {function():void} Function to destroy the context menu entries.
  */
 export default function addContextMenu(app, manager, owner, editSelection) {
-  const { action: exportAction, destroy: destroyExportAction } =
-    createListItemBulkAction(manager.currentFeatures, {
-      callback: () => {
-        exportFeatures(
-          manager.currentFeatures.value,
-          manager.currentLayer.value,
-        );
-      },
-      name: 'list.export',
-      icon: '$vcsExport',
-    });
-  exportAction.disabled = false;
-  app.contextMenuManager.addEventHandler((event) => {
+  const highlightStyle = getDefaultHighlightStyle();
+  let closeListener = () => {};
+
+  const eventHandler = (event) => {
     const contextEntries = [];
     if (
       event.feature &&
       event.feature[vcsLayerName] === manager.currentLayer.value.name
     ) {
-      let editFeatures = manager.currentFeatures.value;
-      const disabled =
-        manager.currentSession.value?.type === SessionType.CREATE &&
-        event.feature === editFeatures[0];
+      const isSelected = manager.currentFeatures.value.includes(event.feature);
 
-      if (
-        !disabled &&
-        manager.currentSession.value?.type !== SessionType.SELECT
-      ) {
-        setTimeout(() => {
-          // timeout prevents right click on opened editor window
-          manager.startSelectSession([event.feature]);
-        }, 0);
-        editFeatures = [event.feature];
-      } else if (
-        manager.currentSession.value?.type === SessionType.SELECT &&
-        !editFeatures.some(
-          (feature) => feature.getId() === event.feature.getId(),
-        )
-      ) {
-        setTimeout(() => {
-          // timeout prevents right click on opened editor window
-          manager.currentSession.value.setCurrentFeatures([event.feature]);
-        }, 0);
-        editFeatures = [event.feature];
-      }
+      const disabled =
+        isSelected && manager.currentSession.value?.type === SessionType.CREATE;
+
       contextEntries.push({
         id: 'draw-edit_properties',
         name: 'drawing.contextMenu.editProperties',
         disabled,
         icon: '$vcsEdit',
         callback() {
+          if (!isSelected) {
+            manager.startSelectSession([event.feature]);
+          }
           editSelection();
         },
       });
-      if (editFeatures.length === 1) {
-        contextEntries.push({
-          id: 'draw-edit_geometry',
-          name: 'drawing.geometry.edit',
-          disabled,
-          icon: '$vcsEditVertices',
-          callback() {
-            manager.startEditSession();
-          },
-        });
-      }
+
+      contextEntries.push({
+        id: 'draw-edit_geometry',
+        name: 'drawing.geometry.edit',
+        disabled,
+        icon: '$vcsEditVertices',
+        callback() {
+          manager.startEditSession(event.feature);
+        },
+      });
+
+      const featuresToBeEdited = isSelected
+        ? manager.currentFeatures.value
+        : [event.feature];
+
       const geometryTypes = new Set(
-        editFeatures.map(
+        featuresToBeEdited.map(
           (f) =>
-            f.getGeometry().get('_vcsGeomType') ?? f.getGeometry().getType(),
+            f.getGeometry()?.get('_vcsGeomType') ??
+            f.getGeometry()?.getType() ??
+            GeometryType.Point,
         ),
       );
+
       const allowedModes = getAllowedEditorTransformationModes(
         geometryTypes,
-        editFeatures.length,
+        featuresToBeEdited.length,
       );
+
       allowedModes.forEach((mode) => {
         contextEntries.push({
           id: `draw-${mode}`,
@@ -100,25 +86,69 @@ export default function addContextMenu(app, manager, owner, editSelection) {
             if (!app.windowManager.has(drawPluginWindowId)) {
               editSelection();
             }
-            manager.startTransformSession(mode);
+            manager.startTransformSession(mode, featuresToBeEdited);
           },
         });
       });
-      exportAction.disabled = disabled;
-      contextEntries.push(exportAction);
-      const deleteAction = createDeleteSelectedAction(
-        manager,
-        'draw-context-delete',
-      );
-      deleteAction.disabled = disabled;
-      contextEntries.push(deleteAction);
-    } else {
-      manager.currentSession.value?.clearSelection?.();
+
+      contextEntries.push({
+        disabled,
+        name: `drawing.contextMenu.exportSelection`,
+        icon: '$vcsExport',
+        callback() {
+          const writeOptions = {
+            writeStyle: true,
+            embedIcons: true,
+            prettyPrint: true,
+            writeId: true,
+          };
+          const text = writeGeoJSON(
+            {
+              features: featuresToBeEdited,
+              vcsMeta: manager.currentLayer.value.getVcsMeta(writeOptions),
+            },
+            writeOptions,
+          );
+          downloadText(text, 'drawings.json');
+        },
+      });
+
+      contextEntries.push({
+        name: 'drawing.contextMenu.removeSelection',
+        icon: '$vcsTrashCan',
+        disabled,
+        callback() {
+          manager.currentLayer.value.removeFeaturesById(
+            featuresToBeEdited.map((f) => f.getId()),
+          );
+        },
+      });
+
+      if (!isSelected) {
+        const featureId = event.feature.getId();
+        closeListener = app.contextMenuManager.closed.addEventListener(() => {
+          closeListener();
+          const selectedNow = manager.currentFeatures.value.includes(
+            event.feature,
+          );
+          if (!selectedNow) {
+            manager.currentLayer.value.featureVisibility.unHighlight([
+              featureId,
+            ]);
+          }
+        });
+
+        manager.currentLayer.value.featureVisibility.highlight({
+          [featureId]: highlightStyle,
+        });
+      }
     }
     return contextEntries;
-  }, owner);
+  };
+  app.contextMenuManager.addEventHandler(eventHandler, owner);
 
   return () => {
-    destroyExportAction();
+    app.contextMenuManager.removeHandler(eventHandler);
+    closeListener();
   };
 }

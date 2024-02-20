@@ -91,6 +91,8 @@ export default function drawingPlugin() {
           },
           contextMenu: {
             editProperties: 'Edit properties',
+            removeSelection: 'Remove selection',
+            exportSelection: 'Export selection',
           },
         },
       },
@@ -128,6 +130,8 @@ export default function drawingPlugin() {
           },
           contextMenu: {
             editProperties: 'Eigenschaften editieren',
+            removeSelection: 'Selektion entfernen',
+            exportSelection: 'Selektion exportieren',
           },
         },
       },

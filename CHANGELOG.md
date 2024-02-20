@@ -1,3 +1,8 @@
+# v2.0.3
+
+- changed the behaviour of the context menu.
+- added remove/export functions to the context menu.
+
 # v2.0.2
 
 - fixes context menu to be disabled for current feature during creation.

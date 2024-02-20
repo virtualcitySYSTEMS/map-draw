@@ -32,7 +32,7 @@ import { unByKey } from 'ol/Observable.js';
  * @property {function(import("@vcmap/core").GeometryType):void} startCreateSession
  * @property {function(import("ol").Feature[]=):void} startSelectSession - optional features to select
  * @property {function(import("ol").Feature=):void} startEditSession - optional feature to select
- * @property {function(import("@vcmap/core").TransformationMode):void} startTransformSession
+ * @property {function(import("@vcmap/core").TransformationMode, import("ol").Feature[]=):void} startTransformSession
  * @property {function():import("@vcmap/core").VectorLayer} getDefaultLayer
  * @property {function():void} placeCurrentFeaturesOnTerrain - Places features on top of the terrain. When multiple features are selected, the relative position is not changed.
  * @property {function():void} stop
@@ -292,22 +292,31 @@ export function createSimpleEditorManager(app) {
       app.maps.eventHandler.featureInteraction.pullPickedPosition = 0.05;
     },
     startSelectSession(features) {
-      setCurrentSession(
-        startSelectFeaturesSession(
-          app,
-          currentLayer.value,
-          selectInteractionId,
-          undefined,
-        ),
-      );
+      if (currentEditSession.value?.type !== SessionType.SELECT) {
+        setCurrentSession(
+          startSelectFeaturesSession(
+            app,
+            currentLayer.value,
+            selectInteractionId,
+            undefined,
+          ),
+        );
+      }
       if (features) {
         currentSession.value?.setCurrentFeatures(features);
       }
     },
     startEditSession(feature) {
-      setCurrentEditSession(
-        startEditGeometrySession(app, currentLayer.value, selectInteractionId),
-      );
+      if (currentEditSession.value?.type !== SessionType.EDIT_GEOMETRY) {
+        setCurrentEditSession(
+          startEditGeometrySession(
+            app,
+            currentLayer.value,
+            selectInteractionId,
+          ),
+        );
+      }
+
       if (feature) {
         // set the feature at the selectFeatureSession
         currentSession.value?.setCurrentFeatures(feature);
