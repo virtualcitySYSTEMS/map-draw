@@ -12,6 +12,7 @@ import {
 import {
   createListExportAction,
   createListImportAction,
+  importIntoLayer,
   makeEditorCollectionComponentClass,
 } from '@vcmap/ui';
 import { Feature } from 'ol';
@@ -19,7 +20,7 @@ import { unByKey } from 'ol/Observable.js';
 import { watch } from 'vue';
 import { isEmpty } from 'ol/extent.js';
 import { name } from '../../package.json';
-import { exportFeatures, importFeatures } from '../util/actionHelper.js';
+import { exportFeatures } from '../util/actionHelper.js';
 import { getDrawEditor } from '../util/windowHelper.js';
 
 /**
@@ -492,7 +493,11 @@ export async function createCategory(manager, vcsApp) {
 
   const { action: importAction, destroy: destroyImportAction } =
     createListImportAction(
-      (files) => importFeatures(manager, files),
+      (files) =>
+        importIntoLayer(files, vcsApp, manager.currentLayer.value, {
+          setStyle: true,
+          setVcsMeta: true,
+        }),
       vcsApp.windowManager,
       name,
       'category-manager',
