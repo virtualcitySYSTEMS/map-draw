@@ -1,3 +1,7 @@
+# v2.0.6
+
+- fixes an issue with starting editing mode by context menu
+
 # v2.0.3
 
 - changed the behaviour of the context menu.

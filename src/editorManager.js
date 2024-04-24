@@ -1,4 +1,4 @@
-import { watch, shallowRef } from 'vue';
+import { watch, shallowRef, nextTick } from 'vue';
 import {
   GeometryType,
   SelectionMode,
@@ -31,12 +31,12 @@ import { unByKey } from 'ol/Observable.js';
  * @property {import("vue").ShallowRef<import("@vcmap/core").VectorLayer>} currentLayer
  * @property {function(import("@vcmap/core").GeometryType):void} startCreateSession
  * @property {function(import("ol").Feature[]=):void} startSelectSession - optional features to select
- * @property {function(import("ol").Feature=):void} startEditSession - optional feature to select
+ * @property {function(import("ol").Feature=):Promise<void>} startEditSession - optional feature to select
  * @property {function(import("@vcmap/core").TransformationMode, import("ol").Feature[]=):void} startTransformSession
  * @property {function():import("@vcmap/core").VectorLayer} getDefaultLayer
  * @property {function():void} placeCurrentFeaturesOnTerrain - Places features on top of the terrain. When multiple features are selected, the relative position is not changed.
- * @property {function():void} stop
- * @property {function():void} stopEditing
+ * @property {function():Promise<void>} stop
+ * @property {function():Promise<void>} stopEditing
  * @property {function():void} destroy
  */
 
@@ -198,13 +198,15 @@ export function createSimpleEditorManager(app) {
   /**
    * Sets a new edit sesstion (either features or geometry) and makes sure that the current edit session is stopped and there is a selection session running.
    * @param {import("@vcmap/core").EditFeaturesSession | import("@vcmap/core").EditGeometrySession | null} newSession
+   * @param {import("ol").Feature[] | import("ol").Feature } features Initially selected features
    */
-  function setCurrentEditSession(newSession) {
+  async function setCurrentEditSession(newSession, features) {
     editSessionStoppedListener();
     editSessionListener();
     currentEditSession.value?.stop?.();
-    currentEditSession.value = newSession;
     if (newSession) {
+      // next tick is needed because onUnmounted the window ends the current editing session.
+      await nextTick();
       const selectionMode =
         newSession.type === SessionType.EDIT_GEOMETRY
           ? SelectionMode.SINGLE
@@ -221,18 +223,27 @@ export function createSimpleEditorManager(app) {
       } else {
         currentSession.value.setMode(selectionMode);
       }
-      editSessionStoppedListener =
-        currentEditSession.value.stopped.addEventListener(
-          setCurrentEditSession,
-        );
+
+      editSessionStoppedListener = newSession.stopped.addEventListener(
+        setCurrentEditSession,
+      );
       editSessionListener = setupEditSessionListeners(
         currentSession.value,
-        currentEditSession.value,
+        newSession,
       );
+
+      if (features) {
+        await currentSession.value.setCurrentFeatures(features);
+      } else if (newSession.type === SessionType.EDIT_GEOMETRY) {
+        newSession.setFeature(currentSession.value?.currentFeatures[0]);
+      } else {
+        newSession.setFeatures(currentSession.value?.currentFeatures);
+      }
     } else {
       editSessionStoppedListener = () => {};
       editSessionListener = () => {};
     }
+    currentEditSession.value = newSession;
   }
 
   const layerWatcher = watch(currentLayer, () => {
@@ -306,54 +317,29 @@ export function createSimpleEditorManager(app) {
         currentSession.value?.setCurrentFeatures(features);
       }
     },
-    startEditSession(feature) {
-      if (currentEditSession.value?.type !== SessionType.EDIT_GEOMETRY) {
-        setCurrentEditSession(
-          startEditGeometrySession(
-            app,
-            currentLayer.value,
-            selectInteractionId,
-          ),
-        );
-      }
-
-      if (feature) {
-        // set the feature at the selectFeatureSession
-        currentSession.value?.setCurrentFeatures(feature);
-      } else {
-        currentEditSession.value?.setFeature(
-          currentSession.value?.firstFeature,
-        );
-      }
+    async startEditSession(feature) {
+      await setCurrentEditSession(
+        startEditGeometrySession(app, currentLayer.value, selectInteractionId),
+        feature,
+      );
     },
-    startTransformSession(mode, features) {
-      if (currentEditSession.value?.type === SessionType.EDIT_FEATURES) {
-        currentEditSession.value.setMode(mode);
-      } else {
-        setCurrentEditSession(
-          startEditFeaturesSession(
-            app,
-            currentLayer.value,
-            selectInteractionId,
-            mode,
-          ),
-        );
-      }
-      if (features) {
-        // set the feature at the selectFeatureSession
-        currentSession.value?.setCurrentFeatures(features);
-      } else {
-        currentEditSession.value?.setFeatures(
-          currentSession.value?.currentFeatures,
-        );
-      }
+    async startTransformSession(mode, features) {
+      await setCurrentEditSession(
+        startEditFeaturesSession(
+          app,
+          currentLayer.value,
+          selectInteractionId,
+          mode,
+        ),
+        features,
+      );
     },
-    stop() {
+    async stop() {
       setCurrentSession(null);
-      setCurrentEditSession(null);
+      await setCurrentEditSession(null);
     },
-    stopEditing() {
-      setCurrentEditSession(null);
+    async stopEditing() {
+      await setCurrentEditSession(null);
       if (currentSession?.value?.type === SessionType.SELECT) {
         currentSession.value.setMode(SelectionMode.MULTI);
       }
