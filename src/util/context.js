@@ -15,9 +15,9 @@ import { drawPluginWindowId } from './windowHelper.js';
 /**
  * Adds edit actions to the context menu.
  * @param {import("@vcmap/ui").VcsUiApp} app The VcsUiApp instance
- * @param {EditorManager} manager The editor manager
+ * @param {import("../editorManager.js").EditorManager} manager The editor manager
  * @param {string | symbol} owner The owner of the context menu entries.
- * @param {function(import("ol").Feature[]):void} editSelection Function to open collection component editor for selected features.
+ * @param {function():void} editSelection Function to open collection component editor for selected features.
  * @returns {function():void} Function to destroy the context menu entries.
  */
 export default function addContextMenu(app, manager, owner, editSelection) {

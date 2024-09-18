@@ -13,7 +13,7 @@ import {
   maxZIndex,
   OpenlayersMap,
   CesiumMap,
-  getFlatCoordinatesFromGeometry,
+  getFlatCoordinateReferences,
   TransformationMode,
   vectorStyleSymbol,
   VectorStyleItem,
@@ -158,7 +158,7 @@ export function createSimpleEditorManager(app) {
   const currentSession = shallowRef(null);
   /** @type {import('vue').ShallowRef<import('@vcmap/core').EditorSession | null>} */
   const currentEditSession = shallowRef(null);
-  const currentFeatures = shallowRef();
+  const currentFeatures = shallowRef([]);
   let templateFeature;
   const layer = createSimpleEditorLayer(app);
   const currentLayer = shallowRef(layer);
@@ -197,13 +197,14 @@ export function createSimpleEditorManager(app) {
 
   /**
    * Sets a new edit sesstion (either features or geometry) and makes sure that the current edit session is stopped and there is a selection session running.
-   * @param {import("@vcmap/core").EditFeaturesSession | import("@vcmap/core").EditGeometrySession | null} newSession
-   * @param {import("ol").Feature[] | import("ol").Feature } features Initially selected features
+   * @param {(function():import("@vcmap/core").EditFeaturesSession | import("@vcmap/core").EditGeometrySession) | null} newSessionCallback
+   * @param {import("ol").Feature[] | import("ol").Feature } [features] Initially selected features
    */
-  async function setCurrentEditSession(newSession, features) {
+  async function setCurrentEditSession(newSessionCallback, features) {
     editSessionStoppedListener();
     editSessionListener();
     currentEditSession.value?.stop?.();
+    const newSession = newSessionCallback?.() || null;
     if (newSession) {
       // next tick is needed because onUnmounted the window ends the current editing session.
       await nextTick();
@@ -233,7 +234,7 @@ export function createSimpleEditorManager(app) {
       );
 
       if (features) {
-        await currentSession.value.setCurrentFeatures(features);
+        await currentSession.value?.setCurrentFeatures(features);
       } else if (newSession.type === SessionType.EDIT_GEOMETRY) {
         newSession.setFeature(currentSession.value?.currentFeatures[0]);
       } else {
@@ -319,18 +320,24 @@ export function createSimpleEditorManager(app) {
     },
     async startEditSession(feature) {
       await setCurrentEditSession(
-        startEditGeometrySession(app, currentLayer.value, selectInteractionId),
+        () =>
+          startEditGeometrySession(
+            app,
+            currentLayer.value,
+            selectInteractionId,
+          ),
         feature,
       );
     },
     async startTransformSession(mode, features) {
       await setCurrentEditSession(
-        startEditFeaturesSession(
-          app,
-          currentLayer.value,
-          selectInteractionId,
-          mode,
-        ),
+        () =>
+          startEditFeaturesSession(
+            app,
+            currentLayer.value,
+            selectInteractionId,
+            mode,
+          ),
         features,
       );
     },
@@ -348,12 +355,14 @@ export function createSimpleEditorManager(app) {
       // can't use placeGeometryOnTerrain from @vcmap/core since edit features handlers do not listen to geometry changes
       const map = app.maps.activeMap;
 
+      // XXX this does not work for XY layouts
       const maxDiffs = await Promise.all(
+        // XXX do this in one go: get all coordiantes first, then place them onto terrain
         currentFeatures.value.map(async (feature) => {
           let maxDiff = 0;
           const geometry = feature.getGeometry();
           if (map instanceof CesiumMap && geometry) {
-            const flats = getFlatCoordinatesFromGeometry(geometry);
+            const flats = getFlatCoordinateReferences(geometry);
             const groundFlats = structuredClone(flats);
             await map.getHeightFromTerrain(groundFlats);
             maxDiff = flats.reduce((acc, coord, index) => {

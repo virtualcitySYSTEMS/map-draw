@@ -2,7 +2,6 @@ import {
   Category,
   writeGeoJSONFeature,
   parseGeoJSON,
-  GeometryType,
   Viewpoint,
   mercatorProjection,
   Extent,
@@ -40,28 +39,6 @@ export const CategoryType = {
   TEXT: 2,
   OBJECT: 3,
 };
-
-/**
- * @param {import("ol").Feature} feature
- * @param {CategoryType} categoryType
- * @returns {boolean}
- */
-function isFeatureOfType(feature, categoryType) {
-  const geometryType = feature.getGeometry()?.getType?.();
-  if (!geometryType) {
-    return false;
-  }
-
-  if (geometryType === GeometryType.Point) {
-    if (feature.get('olcs_modelUrl') || feature.get('olcs_primitiveOptions')) {
-      return CategoryType.OBJECT === categoryType;
-    }
-    if (feature.getStyle()?.getText()?.getText?.()) {
-      return CategoryType.TEXT === categoryType;
-    }
-  }
-  return CategoryType.SHAPE === categoryType;
-}
 
 /**
  * @param {import("ol").Feature} feature
@@ -138,10 +115,7 @@ class SimpleEditorCategory extends Category {
         }
       }),
       source.on('addfeature', ({ feature }) => {
-        if (
-          isFeatureOfType(feature, this._categoryType) &&
-          !this.collection.hasKey(feature.getId())
-        ) {
+        if (!this.collection.hasKey(feature.getId())) {
           if (!feature.get('title')) {
             setTitleOnFeature(feature, layer);
           }

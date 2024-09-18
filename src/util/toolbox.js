@@ -1,4 +1,4 @@
-import { watch } from 'vue';
+import { reactive, watch } from 'vue';
 import { GeometryType, SessionType } from '@vcmap/core';
 import { ToolboxType } from '@vcmap/ui';
 import { name } from '../../package.json';
@@ -30,7 +30,7 @@ function createCreateToolbox(manager) {
 
   const toolbox = {
     type: ToolboxType.SELECT,
-    action: {
+    action: reactive({
       name: 'creation',
       currentIndex: 3,
       active: false,
@@ -69,7 +69,7 @@ function createCreateToolbox(manager) {
         createCreateButton(GeometryType.Circle),
         createCreateButton(GeometryType.BBox),
       ],
-    },
+    }),
   };
 
   const destroy = watch(manager.currentSession, () => {

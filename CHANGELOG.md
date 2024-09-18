@@ -1,3 +1,7 @@
+# v3.0.0
+
+- update @vcmap/core and @vcmap/ui to 6.x
+
 # v2.0.6
 
 - fixes an issue with starting editing mode by context menu
