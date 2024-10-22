@@ -16,7 +16,7 @@ import {
 } from '@vcmap/ui';
 import { Feature } from 'ol';
 import { unByKey } from 'ol/Observable.js';
-import { watch } from 'vue';
+import { reactive, watch } from 'vue';
 import { isEmpty } from 'ol/extent.js';
 import { name } from '../../package.json';
 import { exportFeatures } from '../util/actionHelper.js';
@@ -197,7 +197,7 @@ function itemMappingFunction(
 
   let hidden = layer.featureVisibility.hiddenObjects[featureItem.name];
 
-  const hideAction = {
+  const hideAction = reactive({
     name: 'hideAction',
     icon: hidden ? '$vcsCheckbox' : '$vcsCheckboxChecked',
     callback() {
@@ -217,7 +217,7 @@ function itemMappingFunction(
         this.icon = '$vcsCheckboxChecked';
       }
     },
-  };
+  });
 
   const hideListener = layer.featureVisibility.changed.addEventListener(
     (event) => {
@@ -383,7 +383,7 @@ export async function createCategory(manager, vcsApp) {
   const layer = manager.getDefaultLayer();
   let visibilityState = getVisibilityState(layer);
 
-  const hideAllAction = {
+  const hideAllAction = reactive({
     name: 'hide-all',
     title:
       visibilityState === VisibilityState.ALL
@@ -409,7 +409,7 @@ export async function createCategory(manager, vcsApp) {
         this.title = 'drawing.category.hideAll';
       }
     },
-  };
+  });
 
   function updateHideAllAction() {
     visibilityState = getVisibilityState(layer);

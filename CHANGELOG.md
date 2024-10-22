@@ -1,6 +1,7 @@
 # v3.0.0
 
 - update @vcmap/core and @vcmap/ui to 6.x
+- adds config for altitude modes to show. by default, only clamp & absolute are shown.
 
 # v2.0.6
 

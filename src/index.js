@@ -8,8 +8,13 @@ import SimpleEditorCategory, {
   createCategory,
 } from './category/simpleCategory.js';
 import { setupDrawWindow } from './util/windowHelper.js';
+import getDefaultOptions from './defaultOptions.js';
+import ConfigEditor from './ConfigEditor.vue';
 
-export default function drawingPlugin() {
+export default function drawingPlugin(moduleConfig) {
+  /** @type {DrawConfig} */
+  const config = { ...structuredClone(moduleConfig), ...getDefaultOptions() };
+
   return {
     get name() {
       return name;
@@ -20,14 +25,20 @@ export default function drawingPlugin() {
     get mapVersion() {
       return mapVersion;
     },
-    getDefaultOptions() {
-      return {};
+    get config() {
+      return config;
     },
+    getDefaultOptions,
     toJSON() {
       return {};
     },
     getConfigEditors() {
-      return [];
+      return [
+        {
+          title: 'drawing.config.title',
+          component: ConfigEditor,
+        },
+      ];
     },
     _destroy: () => {},
     async initialize(vcsUiApp) {
@@ -94,6 +105,10 @@ export default function drawingPlugin() {
             removeSelection: 'Remove selection',
             exportSelection: 'Export selection',
           },
+          config: {
+            title: 'Draw configuration',
+            altitudeModes: 'Altitude modes',
+          },
         },
       },
       de: {
@@ -132,6 +147,10 @@ export default function drawingPlugin() {
             editProperties: 'Eigenschaften editieren',
             removeSelection: 'Selektion entfernen',
             exportSelection: 'Selektion exportieren',
+          },
+          config: {
+            title: 'Zeichentooleinstellungen',
+            altitudeModes: 'Höhenmodi',
           },
         },
       },

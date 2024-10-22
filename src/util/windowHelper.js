@@ -9,6 +9,9 @@ export const drawPluginWindowId = 'DrawPluginMainWindow';
 const headerTitle = ref();
 
 export function getDrawEditor(manager, app) {
+  const plugin = app.plugins.getByKey(name);
+  const altitudeModes = plugin?.config?.altitudeModes;
+
   return {
     component: VcsFeatureEditingWindow,
     provides: {
@@ -18,6 +21,9 @@ export function getDrawEditor(manager, app) {
       headerTitle,
       styles: { width: '280px', height: 'auto' },
       infoUrlCallback: app.getHelpUrlCallback('tools/drawingTool.html'),
+    },
+    props: {
+      altitudeModes,
     },
   };
 }
@@ -68,6 +74,8 @@ export function setupDrawWindow(manager, app) {
           },
           name,
         );
+      } else {
+        app.windowManager.bringWindowToTop(drawPluginWindowId);
       }
     } else {
       app.windowManager.remove(drawPluginWindowId);
