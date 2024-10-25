@@ -71,18 +71,13 @@ export default function drawingPlugin(moduleConfig) {
       en: {
         drawing: {
           create: {
-            [GeometryType.Point]: 'Draw Points',
-            [GeometryType.Polygon]: 'Draw Polygons',
-            [GeometryType.LineString]: 'Draw Lines',
-            [GeometryType.BBox]: 'Draw Boxes',
-            [GeometryType.Circle]: 'Draw Circles',
+            [GeometryType.Point]: 'Draw points',
+            [GeometryType.Polygon]: 'Draw polygons',
+            [GeometryType.LineString]: 'Draw lines',
+            [GeometryType.BBox]: 'Draw bounding box',
+            [GeometryType.Circle]: 'Draw circles',
           },
           geometry: {
-            [GeometryType.Point]: 'Point',
-            [GeometryType.Polygon]: 'Polygon',
-            [GeometryType.LineString]: 'Line',
-            [GeometryType.BBox]: 'Box',
-            [GeometryType.Circle]: 'Circle',
             edit: 'Edit geometry',
           },
           transform: {
@@ -96,7 +91,6 @@ export default function drawingPlugin(moduleConfig) {
             shape: 'Shapes',
             hideAll: 'Hide all',
             showAll: 'Show all',
-            removeSelected: 'Remove selection',
             zoomTo: 'Zoom to',
             edit: 'Edit geometry',
           },
@@ -121,11 +115,6 @@ export default function drawingPlugin(moduleConfig) {
             [GeometryType.Circle]: 'Kreise zeichnen',
           },
           geometry: {
-            [GeometryType.Point]: 'Punkt',
-            [GeometryType.Polygon]: 'Polygon',
-            [GeometryType.LineString]: 'Linie',
-            [GeometryType.BBox]: 'Bounding Box',
-            [GeometryType.Circle]: 'Kreis',
             edit: 'Geometrie editieren',
           },
           transform: {
@@ -139,7 +128,6 @@ export default function drawingPlugin(moduleConfig) {
             shape: 'Formen',
             hideAll: 'Alle ausblenden',
             showAll: 'Alle einblenden',
-            removeSelected: 'Selektierte Feature löschen',
             zoomTo: 'Hin zoomen',
             edit: 'Geometrie editieren',
           },
