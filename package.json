@@ -37,7 +37,8 @@
     "./dist": "./dist/index.js"
   },
   "eslintIgnore": [
-    "node_modules"
+    "node_modules",
+    "dist"
   ],
   "eslintConfig": {
     "root": true,

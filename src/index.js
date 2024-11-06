@@ -13,7 +13,7 @@ import ConfigEditor from './ConfigEditor.vue';
 
 export default function drawingPlugin(moduleConfig) {
   /** @type {DrawConfig} */
-  const config = { ...structuredClone(moduleConfig), ...getDefaultOptions() };
+  const config = { ...getDefaultOptions(), ...structuredClone(moduleConfig) };
 
   return {
     get name() {
@@ -26,11 +26,22 @@ export default function drawingPlugin(moduleConfig) {
       return mapVersion;
     },
     get config() {
-      return config;
+      return structuredClone(config);
     },
     getDefaultOptions,
     toJSON() {
-      return {};
+      const defaultOptions = getDefaultOptions();
+      const serializedConfig = {};
+      if (
+        config.altitudeModes.length !== defaultOptions.altitudeModes.length ||
+        config.altitudeModes.some(
+          (e) => !defaultOptions.altitudeModes.includes(e),
+        )
+      ) {
+        serializedConfig.altitudeModes = config.altitudeModes.slice();
+      }
+
+      return serializedConfig;
     },
     getConfigEditors() {
       return [

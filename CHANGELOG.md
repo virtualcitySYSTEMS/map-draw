@@ -1,3 +1,8 @@
+# v3.0.1
+
+- fixed config editors not passing proxies to the config.
+- fixed toJSON properly returning the config.
+
 # v3.0.0
 
 - updates @vcmap/core and @vcmap/ui to 6.x

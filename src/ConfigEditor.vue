@@ -5,7 +5,7 @@
     VcsLabel,
     VcsSelect,
   } from '@vcmap/ui';
-  import { ref } from 'vue';
+  import { ref, toRaw } from 'vue';
   import { VContainer, VCol, VRow } from 'vuetify/components';
   import getDefaultOptions from './defaultOptions.js';
 
@@ -20,7 +20,7 @@
     },
   });
 
-  const localConfig = ref({ ...props.getConfig(), ...getDefaultOptions() });
+  const localConfig = ref({ ...getDefaultOptions(), ...props.getConfig() });
 
   /**
    * @type {{ value: import("@vcmap/core").VectorPropertiesOptions["altitudeMode"], title: string }}
@@ -39,7 +39,7 @@
   }));
 
   function apply() {
-    props.setConfig(localConfig.value);
+    props.setConfig(structuredClone(toRaw(localConfig.value)));
   }
 </script>
 

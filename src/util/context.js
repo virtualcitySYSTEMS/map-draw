@@ -73,7 +73,9 @@ export default function addContextMenu(app, manager, owner, editSelection) {
 
       const allowedModes = getAllowedEditorTransformationModes(
         geometryTypes,
-        featuresToBeEdited.length,
+        featuresToBeEdited,
+        manager.currentLayer.value,
+        app.maps.activeMap?.className === 'CesiumMap',
       );
 
       allowedModes.forEach((mode) => {
