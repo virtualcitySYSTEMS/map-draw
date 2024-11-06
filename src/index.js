@@ -86,7 +86,7 @@ export default function drawingPlugin(moduleConfig) {
             [TransformationMode.SCALE]: 'Scale features',
             [TransformationMode.EXTRUDE]: 'Extrude features',
           },
-          select: 'Select features',
+          select: 'Select drawn objects',
           category: {
             shape: 'Shapes',
             hideAll: 'Hide all',
@@ -123,7 +123,7 @@ export default function drawingPlugin(moduleConfig) {
             [TransformationMode.SCALE]: 'Objekt skalieren',
             [TransformationMode.EXTRUDE]: 'Objekt extrudieren',
           },
-          select: 'Objekte selektieren',
+          select: 'Gezeichnete Objekte auswählen',
           category: {
             shape: 'Formen',
             hideAll: 'Alle ausblenden',
