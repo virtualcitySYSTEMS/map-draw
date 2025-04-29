@@ -33,9 +33,11 @@ describe('VcsPlugin Interface test', () => {
     it('should return the plugin name from the package.json', () => {
       expect(pluginInstance).to.have.property('name', packageJSON.name);
     });
+
     it('should return the plugin version from the package.json', () => {
       expect(pluginInstance).to.have.property('version', packageJSON.version);
     });
+
     it('should return the plugin mapVersion from the package.json', () => {
       expect(pluginInstance).to.have.property(
         'mapVersion',
@@ -73,6 +75,7 @@ describe('VcsPlugin Interface test', () => {
         expect(pluginInstance.initialize).to.be.a('function');
       }
     });
+
     it('should implement destroy', () => {
       if (pluginInstance?.destroy) {
         expect(pluginInstance.destroy).to.be.a('function');

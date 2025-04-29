@@ -6,7 +6,7 @@ import { downloadText } from '@vcmap/ui';
  * @param {Array} features - The features to export.
  * @param {Object} layer - The layer containing the features.
  */
-// eslint-disable-next-line import/prefer-default-export
+
 export function exportFeatures(features, layer) {
   const writeOptions = {
     writeStyle: true,

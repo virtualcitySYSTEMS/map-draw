@@ -44,12 +44,12 @@
 </script>
 
 <template>
-  <AbstractConfigEditor @submit="apply" v-bind="{ ...$attrs, ...$props }">
+  <AbstractConfigEditor v-bind="{ ...$attrs, ...$props }" @submit="apply">
     <VcsFormSection
+      v-if="localConfig"
       heading="drawing.config.title"
       expandable
       :start-open="true"
-      v-if="localConfig"
     >
       <v-container class="py-0 px-1">
         <v-row no-gutters>
@@ -60,9 +60,9 @@
           </v-col>
           <v-col>
             <VcsSelect
+              v-model="localConfig.altitudeModes"
               :items="altitudeModes"
               multiple
-              v-model="localConfig.altitudeModes"
             />
           </v-col>
         </v-row>
