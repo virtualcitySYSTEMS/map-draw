@@ -1,5 +1,12 @@
+import { getLogger } from '@vcsuite/logger';
 import { reactive, watch } from 'vue';
-import { GeometryType, SessionType } from '@vcmap/core';
+import {
+  CesiumMap,
+  GeometryType,
+  ObliqueMap,
+  OpenlayersMap,
+  SessionType,
+} from '@vcmap/core';
 import { ToolboxType } from '@vcmap/ui';
 import { name } from '../../package.json';
 
@@ -102,9 +109,26 @@ export function addToolButtons(manager, app) {
   const { toolbox: createToolbox, destroy: destroyCreateToolbox } =
     createCreateToolbox(manager);
   const createId = app.toolboxManager.add(createToolbox, name).id;
+  const mapChanged = (map) => {
+    if (
+      map instanceof OpenlayersMap ||
+      map instanceof CesiumMap ||
+      map instanceof ObliqueMap
+    ) {
+      createToolbox.action.disabled = false;
+    } else {
+      manager.stop().catch((err) => {
+        getLogger(name).error(err);
+      });
+      createToolbox.action.disabled = true;
+    }
+  };
+  const mapChangedListener = app.maps.mapActivated.addEventListener(mapChanged);
+  mapChanged(app.maps.activeMap);
 
   return () => {
     app.toolboxManager.remove(createId);
     destroyCreateToolbox();
+    mapChangedListener();
   };
 }

@@ -7,10 +7,14 @@ import {
   Extent,
   SessionType,
   FeatureVisibilityAction,
+  CesiumMap,
+  OpenlayersMap,
+  ObliqueMap,
 } from '@vcmap/core';
 import {
   createListExportAction,
   createListImportAction,
+  createSupportedMapMappingFunction,
   importIntoLayer,
   makeEditorCollectionComponentClass,
 } from '@vcmap/ui';
@@ -440,22 +444,24 @@ export async function createCategory(manager, vcsApp) {
   ];
 
   const { collectionComponent: categoryUiItem, category } =
-    await vcsApp.categoryManager.requestCategory(
-      {
-        type: SimpleEditorCategory.className,
-        name: `Simple Drawing - shape`,
-        title: 'drawing.category.shape',
-        categoryType: CategoryType.SHAPE,
-        layer,
-        featureProperty: 'feature',
-      },
-      name,
-      {
-        selectable: true,
-        renamable: true,
-        removable: true,
-        overflowCount: 3,
-      },
+    /** @type {{ collectionComponent: import("@vcmap/ui").CollectionComponentClass<Feature> }} */ (
+      await vcsApp.categoryManager.requestCategory(
+        {
+          type: SimpleEditorCategory.className,
+          name: `Simple Drawing - shape`,
+          title: 'drawing.category.shape',
+          categoryType: CategoryType.SHAPE,
+          layer,
+          featureProperty: 'feature',
+        },
+        name,
+        {
+          selectable: true,
+          renamable: true,
+          removable: true,
+          overflowCount: 3,
+        },
+      )
     );
 
   const drawEditor = getDrawEditor(manager, vcsApp);
@@ -495,14 +501,18 @@ export async function createCategory(manager, vcsApp) {
     { action: hideAllAction, owner: name },
   ]);
 
-  vcsApp.categoryManager.addMappingFunction(
-    () => {
-      return true;
-    },
-    itemMappingFunction.bind(null, vcsApp, manager),
-    name,
-    [category.name],
-  );
+  categoryUiItem.addItemMapping({
+    mappingFunction: itemMappingFunction.bind(null, vcsApp, manager),
+    owner: name,
+  });
+
+  categoryUiItem.addItemMapping({
+    mappingFunction: createSupportedMapMappingFunction(
+      [CesiumMap.className, OpenlayersMap.className, ObliqueMap.className],
+      vcsApp.maps,
+    ),
+    owner: name,
+  });
 
   category.collection.removed.addEventListener((item) => {
     if (manager.currentFeatures.value.includes(item.feature)) {
