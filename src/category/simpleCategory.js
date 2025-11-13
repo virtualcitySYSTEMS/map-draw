@@ -10,6 +10,7 @@ import {
   CesiumMap,
   OpenlayersMap,
   ObliqueMap,
+  PanoramaMap,
 } from '@vcmap/core';
 import {
   createListExportAction,
@@ -508,7 +509,12 @@ export async function createCategory(manager, vcsApp) {
 
   categoryUiItem.addItemMapping({
     mappingFunction: createSupportedMapMappingFunction(
-      [CesiumMap.className, OpenlayersMap.className, ObliqueMap.className],
+      [
+        CesiumMap.className,
+        OpenlayersMap.className,
+        ObliqueMap.className,
+        PanoramaMap.className,
+      ],
       vcsApp.maps,
     ),
     owner: name,

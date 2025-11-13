@@ -18,6 +18,9 @@ import {
   vectorStyleSymbol,
   VectorStyleItem,
   getStyleOptions,
+  ObliqueMap,
+  PanoramaMap,
+  getHeightFromTerrainProvider,
 } from '@vcmap/core';
 import { Feature } from 'ol';
 import { LineString, Point, Polygon } from 'ol/geom';
@@ -50,6 +53,12 @@ function createSimpleEditorLayer(app) {
   const layer = new VectorLayer({
     projection: mercatorProjection.toJSON(),
     zIndex: maxZIndex - 1,
+    mapTypes: [
+      CesiumMap.className,
+      OpenlayersMap.className,
+      ObliqueMap.className,
+      PanoramaMap.className,
+    ],
   });
   markVolatile(layer);
   layer.activate();
@@ -254,6 +263,18 @@ export function createSimpleEditorManager(app) {
     }
   });
 
+  let templateFeatureProperties = {};
+  const mapChangedListener = app.maps.mapActivated.addEventListener((map) => {
+    if (templateFeature) {
+      templateFeature = undefined;
+    }
+    if (map.className === PanoramaMap.className) {
+      templateFeatureProperties = { olcs_altitudeMode: 'absolute' };
+    } else {
+      templateFeatureProperties = {};
+    }
+  });
+
   return {
     currentSession,
     currentEditSession,
@@ -279,7 +300,10 @@ export function createSimpleEditorManager(app) {
             geometry = new Polygon([]);
             break;
         }
-        templateFeature = new Feature({ geometry });
+        templateFeature = new Feature({
+          geometry,
+          ...templateFeatureProperties,
+        });
         templateFeature.setId(id);
       }
 
@@ -361,10 +385,22 @@ export function createSimpleEditorManager(app) {
         currentFeatures.value.map(async (feature) => {
           let maxDiff = 0;
           const geometry = feature.getGeometry();
-          if (map instanceof CesiumMap && geometry) {
+          if (
+            (map instanceof CesiumMap || map instanceof PanoramaMap) &&
+            geometry
+          ) {
             const flats = getFlatCoordinateReferences(geometry);
             const groundFlats = structuredClone(flats);
-            await map.getHeightFromTerrain(groundFlats);
+            const { terrainProvider } = map.getScene();
+            if (!terrainProvider || !terrainProvider.availability) {
+              return 0;
+            }
+            await getHeightFromTerrainProvider(
+              terrainProvider,
+              groundFlats,
+              mercatorProjection,
+              groundFlats,
+            );
             maxDiff = flats.reduce((acc, coord, index) => {
               const current = groundFlats[index][2] - coord[2];
               return current > acc ? current : acc;
@@ -384,6 +420,7 @@ export function createSimpleEditorManager(app) {
     },
     destroy() {
       setCurrentSession(null);
+      mapChangedListener();
       layerWatcher();
       app.layers.remove(layer);
       layer.destroy();

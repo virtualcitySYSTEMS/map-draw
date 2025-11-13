@@ -5,6 +5,7 @@ import {
   GeometryType,
   ObliqueMap,
   OpenlayersMap,
+  PanoramaMap,
   SessionType,
 } from '@vcmap/core';
 import { ToolboxType } from '@vcmap/ui';
@@ -113,7 +114,8 @@ export function addToolButtons(manager, app) {
     if (
       map instanceof OpenlayersMap ||
       map instanceof CesiumMap ||
-      map instanceof ObliqueMap
+      map instanceof ObliqueMap ||
+      map instanceof PanoramaMap
     ) {
       createToolbox.action.disabled = false;
     } else {

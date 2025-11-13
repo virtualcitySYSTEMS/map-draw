@@ -1,3 +1,12 @@
+# v5.0.0
+
+- updates @vcmap/core and @vcmap/ui to 6.3
+- allow for drawing in panorama.
+
+# v4.0.0
+
+- update to map 6.2 of @vcmap/core and @vcmap/ui with bugfixes for panorama.
+
 # v3.0.1
 
 - fixed config editors not passing proxies to the config.

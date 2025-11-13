@@ -1,6 +1,8 @@
 import {
+  CesiumMap,
   GeometryType,
   getDefaultHighlightStyle,
+  PanoramaMap,
   SessionType,
   vcsLayerName,
   writeGeoJSON,
@@ -71,11 +73,13 @@ export default function addContextMenu(app, manager, owner, editSelection) {
         ),
       );
 
+      const activeMapClassName = app.maps.activeMap?.className;
       const allowedModes = getAllowedEditorTransformationModes(
         geometryTypes,
         featuresToBeEdited,
         manager.currentLayer.value,
-        app.maps.activeMap?.className === 'CesiumMap',
+        activeMapClassName === CesiumMap.className ||
+          activeMapClassName === PanoramaMap.className,
       );
 
       allowedModes.forEach((mode) => {
