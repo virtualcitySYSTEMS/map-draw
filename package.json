@@ -7,7 +7,7 @@
   "scripts": {
     "prepublishOnly": "vcmplugin build",
     "build": "vcmplugin build",
-    "pack": "vcmplugin pack",
+    "bundle": "vcmplugin bundle",
     "start": "vcmplugin serve",
     "preview": "vcmplugin preview",
     "buildStagingApp": "vcmplugin buildStagingApp",
