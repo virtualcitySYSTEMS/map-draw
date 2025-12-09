@@ -110,19 +110,38 @@ export function addToolButtons(manager, app) {
   const { toolbox: createToolbox, destroy: destroyCreateToolbox } =
     createCreateToolbox(manager);
   const createId = app.toolboxManager.add(createToolbox, name).id;
+  let currentImageListener = () => {};
+  const disable = () => {
+    manager.stop().catch((err) => {
+      getLogger(name).error(err);
+    });
+    createToolbox.action.disabled = true;
+  };
+
+  /**
+   * @param {import("@vcmap/core")=} image
+   */
+  const panoramaImageChanged = (image) => {
+    if (image?.hasDepth) {
+      createToolbox.action.disabled = false;
+    } else {
+      disable();
+    }
+  };
   const mapChanged = (map) => {
+    currentImageListener();
     if (
       map instanceof OpenlayersMap ||
       map instanceof CesiumMap ||
-      map instanceof ObliqueMap ||
-      map instanceof PanoramaMap
+      map instanceof ObliqueMap
     ) {
       createToolbox.action.disabled = false;
+    } else if (map instanceof PanoramaMap) {
+      currentImageListener =
+        map.currentImageChanged.addEventListener(panoramaImageChanged);
+      panoramaImageChanged(map.currentPanoramaImage);
     } else {
-      manager.stop().catch((err) => {
-        getLogger(name).error(err);
-      });
-      createToolbox.action.disabled = true;
+      disable();
     }
   };
   const mapChangedListener = app.maps.mapActivated.addEventListener(mapChanged);
@@ -132,5 +151,6 @@ export function addToolButtons(manager, app) {
     app.toolboxManager.remove(createId);
     destroyCreateToolbox();
     mapChangedListener();
+    currentImageListener();
   };
 }

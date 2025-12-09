@@ -15,7 +15,6 @@ import {
 import {
   createListExportAction,
   createListImportAction,
-  createSupportedMapMappingFunction,
   importIntoLayer,
   makeEditorCollectionComponentClass,
 } from '@vcmap/ui';
@@ -188,7 +187,7 @@ export default SimpleEditorCategory;
  * @param {import("../editorManager").EditorManager} manager
  * @param {SimpleDrawingItem} featureItem
  * @param {Category<SimpleDrawingItem>} c
- * @param {VcsListItem} categoryListItem
+ * @param {import("@vcmap/ui").VcsListItem} categoryListItem
  */
 function itemMappingFunction(
   vcsApp,
@@ -280,8 +279,39 @@ function itemMappingFunction(
     },
   );
 
+  let currentImageListener = () => {};
+  /**
+   * @param {import("@vcmap/core")=} image
+   */
+  const panoramaImageChanged = (image) => {
+    categoryListItem.disabled = !image?.hasDepth;
+  };
+
+  const mapChanged = (map) => {
+    currentImageListener();
+    if (
+      map instanceof OpenlayersMap ||
+      map instanceof CesiumMap ||
+      map instanceof ObliqueMap
+    ) {
+      categoryListItem.disabled = false;
+    } else if (map instanceof PanoramaMap) {
+      currentImageListener =
+        map.currentImageChanged.addEventListener(panoramaImageChanged);
+      panoramaImageChanged(map.currentPanoramaImage);
+    } else {
+      categoryListItem.disabled = true;
+    }
+  };
+
+  const mapChangedListener =
+    vcsApp.maps.mapActivated.addEventListener(mapChanged);
+  mapChanged(vcsApp.maps.activeMap);
+
   categoryListItem.destroy = () => {
     hideListener();
+    mapChangedListener();
+    currentImageListener();
   };
 }
 
@@ -504,19 +534,6 @@ export async function createCategory(manager, vcsApp) {
 
   categoryUiItem.addItemMapping({
     mappingFunction: itemMappingFunction.bind(null, vcsApp, manager),
-    owner: name,
-  });
-
-  categoryUiItem.addItemMapping({
-    mappingFunction: createSupportedMapMappingFunction(
-      [
-        CesiumMap.className,
-        OpenlayersMap.className,
-        ObliqueMap.className,
-        PanoramaMap.className,
-      ],
-      vcsApp.maps,
-    ),
     owner: name,
   });
 

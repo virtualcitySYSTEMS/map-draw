@@ -33,9 +33,13 @@ export default function addContextMenu(app, manager, owner, editSelection) {
       event.feature[vcsLayerName] === manager.currentLayer.value.name
     ) {
       const isSelected = manager.currentFeatures.value.includes(event.feature);
+      const activeMapClassName = app.maps.activeMap?.className;
 
       const disabled =
-        isSelected && manager.currentSession.value?.type === SessionType.CREATE;
+        (isSelected &&
+          manager.currentSession.value?.type === SessionType.CREATE) ||
+        (activeMapClassName === PanoramaMap.className &&
+          app.maps.activeMap.currentPanoramaImage?.hasDepth !== true);
 
       contextEntries.push({
         id: 'draw-edit_properties',
@@ -73,7 +77,6 @@ export default function addContextMenu(app, manager, owner, editSelection) {
         ),
       );
 
-      const activeMapClassName = app.maps.activeMap?.className;
       const allowedModes = getAllowedEditorTransformationModes(
         geometryTypes,
         featuresToBeEdited,

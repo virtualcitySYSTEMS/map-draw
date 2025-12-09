@@ -1,3 +1,7 @@
+# v5.0.1
+
+- Fixes an issue where drawing in panorama was allowed without depth information.
+
 # v5.0.0
 
 - updates @vcmap/core and @vcmap/ui to 6.3
