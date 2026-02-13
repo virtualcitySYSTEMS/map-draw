@@ -1,3 +1,4 @@
+import type { InteractionEvent } from '@vcmap/core';
 import {
   CesiumMap,
   GeometryType,
@@ -7,48 +8,62 @@ import {
   vcsLayerName,
   writeGeoJSON,
 } from '@vcmap/core';
+import type { VcsAction, VcsUiApp } from '@vcmap/ui';
 import {
   downloadText,
   EditorTransformationIcons,
   getAllowedEditorTransformationModes,
 } from '@vcmap/ui';
+import { getLogger } from '@vcsuite/logger';
+import type Feature from 'ol/Feature.js';
+import { name } from '../../package.json';
+import type { EditorManager } from '../editorManager.js';
 import { drawPluginWindowId } from './windowHelper.js';
 
 /**
  * Adds edit actions to the context menu.
- * @param {import("@vcmap/ui").VcsUiApp} app The VcsUiApp instance
- * @param {import("../editorManager.js").EditorManager} manager The editor manager
- * @param {string | symbol} owner The owner of the context menu entries.
- * @param {function():void} editSelection Function to open collection component editor for selected features.
- * @returns {function():void} Function to destroy the context menu entries.
+ * @param app The VcsUiApp instance
+ * @param manager The editor manager
+ * @param owner The owner of the context menu entries.
+ * @param editSelection Function to open collection component editor for selected features.
+ * @returns Function to destroy the context menu entries.
  */
-export default function addContextMenu(app, manager, owner, editSelection) {
+export default function addContextMenu(
+  app: VcsUiApp,
+  manager: EditorManager,
+  owner: string | symbol,
+  editSelection: () => void,
+): () => void {
   const highlightStyle = getDefaultHighlightStyle();
-  let closeListener = () => {};
+  let closeListener = (): void => {};
 
-  const eventHandler = (event) => {
+  const eventHandler = (event: InteractionEvent): VcsAction[] => {
     const contextEntries = [];
     if (
       event.feature &&
       event.feature[vcsLayerName] === manager.currentLayer.value.name
     ) {
-      const isSelected = manager.currentFeatures.value.includes(event.feature);
+      const isSelected = manager.currentFeatures.value.includes(
+        event.feature as Feature,
+      );
+
       const activeMapClassName = app.maps.activeMap?.className;
 
       const disabled =
         (isSelected &&
           manager.currentSession.value?.type === SessionType.CREATE) ||
         (activeMapClassName === PanoramaMap.className &&
-          app.maps.activeMap.currentPanoramaImage?.hasDepth !== true);
+          (app.maps.activeMap as PanoramaMap).currentPanoramaImage?.hasDepth !==
+            true);
 
       contextEntries.push({
         id: 'draw-edit_properties',
-        name: 'drawing.contextMenu.editProperties',
+        name: 'draw.contextMenu.editProperties',
         disabled,
         icon: '$vcsEdit',
         callback() {
           if (!isSelected) {
-            manager.startSelectSession([event.feature]);
+            manager.startSelectSession([event.feature as Feature]);
           }
           editSelection();
         },
@@ -56,11 +71,15 @@ export default function addContextMenu(app, manager, owner, editSelection) {
 
       contextEntries.push({
         id: 'draw-edit_geometry',
-        name: 'drawing.geometry.edit',
+        name: 'draw.geometry.edit',
         disabled,
         icon: '$vcsEditVertices',
         callback() {
-          manager.startEditSession(event.feature);
+          manager
+            .startEditSession(event.feature as Feature)
+            .catch((e: unknown) => {
+              getLogger(name).error('Error starting edit session', e);
+            });
         },
       });
 
@@ -71,15 +90,15 @@ export default function addContextMenu(app, manager, owner, editSelection) {
       const geometryTypes = new Set(
         featuresToBeEdited.map(
           (f) =>
-            f.getGeometry()?.get('_vcsGeomType') ??
-            f.getGeometry()?.getType() ??
+            (f as Feature).getGeometry()?.get('_vcsGeomType') ??
+            (f as Feature).getGeometry()?.getType() ??
             GeometryType.Point,
         ),
       );
 
       const allowedModes = getAllowedEditorTransformationModes(
         geometryTypes,
-        featuresToBeEdited,
+        featuresToBeEdited as Feature[],
         manager.currentLayer.value,
         activeMapClassName === CesiumMap.className ||
           activeMapClassName === PanoramaMap.className,
@@ -89,20 +108,24 @@ export default function addContextMenu(app, manager, owner, editSelection) {
         contextEntries.push({
           id: `draw-${mode}`,
           disabled,
-          name: `drawing.transform.${mode}`,
+          name: `draw.transform.${mode}`,
           icon: EditorTransformationIcons[mode],
           callback() {
             if (!app.windowManager.has(drawPluginWindowId)) {
               editSelection();
             }
-            manager.startTransformSession(mode, featuresToBeEdited);
+            manager
+              .startTransformSession(mode, featuresToBeEdited as Feature[])
+              .catch((e: unknown) => {
+                getLogger(name).error('Error starting transform session', e);
+              });
           },
         });
       });
 
       contextEntries.push({
         disabled,
-        name: `drawing.contextMenu.exportSelection`,
+        name: `draw.contextMenu.exportSelection`,
         icon: '$vcsExport',
         callback() {
           const writeOptions = {
@@ -113,7 +136,7 @@ export default function addContextMenu(app, manager, owner, editSelection) {
           };
           const text = writeGeoJSON(
             {
-              features: featuresToBeEdited,
+              features: featuresToBeEdited as Feature[],
               vcsMeta: manager.currentLayer.value.getVcsMeta(writeOptions),
             },
             writeOptions,
@@ -123,22 +146,22 @@ export default function addContextMenu(app, manager, owner, editSelection) {
       });
 
       contextEntries.push({
-        name: 'drawing.contextMenu.removeSelection',
+        name: 'draw.contextMenu.removeSelection',
         icon: '$vcsTrashCan',
         disabled,
         callback() {
           manager.currentLayer.value.removeFeaturesById(
-            featuresToBeEdited.map((f) => f.getId()),
+            featuresToBeEdited.map((f) => f.getId()!),
           );
         },
       });
 
       if (!isSelected) {
-        const featureId = event.feature.getId();
+        const featureId = event.feature.getId()!;
         closeListener = app.contextMenuManager.closed.addEventListener(() => {
           closeListener();
           const selectedNow = manager.currentFeatures.value.includes(
-            event.feature,
+            event.feature as Feature,
           );
           if (!selectedNow) {
             manager.currentLayer.value.featureVisibility.unHighlight([

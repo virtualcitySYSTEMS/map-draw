@@ -1,13 +1,18 @@
+import type { VectorLayer } from '@vcmap/core';
 import { writeGeoJSON } from '@vcmap/core';
 import { downloadText } from '@vcmap/ui';
+import type Feature from 'ol/Feature';
 
 /**
  * Exports features to a GeoJSON file and initiates the download.
- * @param {Array} features - The features to export.
- * @param {Object} layer - The layer containing the features.
+ * @param features - The features to export.
+ * @param layer - The layer containing the features.
  */
 
-export function exportFeatures(features, layer) {
+export function exportFeatures(
+  features: Array<Feature>,
+  layer: VectorLayer,
+): void {
   const writeOptions = {
     writeStyle: true,
     embedIcons: true,

@@ -1,5 +1,6 @@
 # v5.0.1
 
+- Refactor plugin code to TypeScript
 - Fixes an issue where drawing in panorama was allowed without depth information.
 
 # v5.0.0

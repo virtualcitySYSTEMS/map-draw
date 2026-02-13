@@ -1,34 +1,39 @@
 import { watch } from 'vue';
-import { SessionType } from '@vcmap/core';
+import type { CreateFeatureSession, GeometryType } from '@vcmap/core';
+import {
+  isCreateSession,
+  isSelectSession,
+  type EditorManager,
+} from '../editorManager';
 
-/**
- * @param {import("../editorManager").EditorManager} manager
- * @returns {function():void}
- */
-export default function addKeyListeners(manager) {
+export default function addKeyListeners(manager: EditorManager): () => void {
   const { currentSession, currentEditSession, currentLayer, currentFeatures } =
     manager;
   const layer = manager.getDefaultLayer();
 
-  function handleSelectKeys(event) {
-    if (event.target.tagName === 'INPUT') {
+  function handleSelectKeys(event: KeyboardEvent): void {
+    if ((event.target as HTMLElement)?.tagName === 'INPUT') {
       return;
     }
     switch (event.code) {
       case 'Escape':
         if (currentEditSession.value) {
           currentEditSession.value.stop();
-        } else if (currentSession.value.currentFeatures.length) {
+        } else if (
+          isSelectSession(currentSession.value) &&
+          currentSession.value.currentFeatures.length
+        ) {
           currentSession.value.clearSelection();
         }
         break;
       case 'Delete':
         if (
           currentLayer.value === layer &&
-          currentSession.value?.currentFeatures?.length
+          isSelectSession(currentSession.value) &&
+          currentSession.value.currentFeatures.length
         ) {
-          const ids = currentSession.value.currentFeatures.map((f) =>
-            f.getId(),
+          const ids = currentSession.value.currentFeatures.map(
+            (f) => f.getId()!,
           );
           currentSession.value.clearSelection();
           currentLayer.value.removeFeaturesById(ids);
@@ -39,31 +44,31 @@ export default function addKeyListeners(manager) {
     }
   }
 
-  function handleCreateKeys(event) {
-    if (event.target.tagName === 'INPUT') {
+  function handleCreateKeys(event: KeyboardEvent): void {
+    if ((event.target as HTMLElement)?.tagName === 'INPUT') {
       return;
     }
     switch (event.code) {
       case 'Escape':
         currentLayer.value.removeFeaturesById([
-          currentFeatures.value[0].getId(),
+          currentFeatures.value[0].getId()!,
         ]);
-        currentSession.value.finish();
+        (currentSession.value as CreateFeatureSession<GeometryType>)?.finish();
         break;
       case 'Enter':
-        currentSession.value.finish();
+        (currentSession.value as CreateFeatureSession<GeometryType>)?.finish();
         break;
       default:
         break;
     }
   }
 
-  if (currentSession.value.type === SessionType.CREATE) {
+  if (isCreateSession(currentSession.value)) {
     window.addEventListener('keydown', handleCreateKeys);
     return () => {
       window.removeEventListener('keydown', handleCreateKeys);
     };
-  } else if (currentSession.value.type === SessionType.SELECT) {
+  } else if (isSelectSession(currentSession.value)) {
     window.addEventListener('keydown', handleSelectKeys);
     return () => {
       window.removeEventListener('keydown', handleSelectKeys);
@@ -72,18 +77,14 @@ export default function addKeyListeners(manager) {
   return () => {};
 }
 
-/**
- * @param {EditorManager} manager
- * @returns {function():void}
- */
-export function setupKeyListeners(manager) {
-  let listeners = () => {};
+export function setupKeyListeners(manager: EditorManager): () => void {
+  let listeners = (): void => {};
   const watcher = watch(manager.currentSession, (session) => {
     listeners();
     if (session) {
       listeners = addKeyListeners(manager);
     } else {
-      listeners = () => {};
+      listeners = (): void => {};
     }
   });
 

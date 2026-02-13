@@ -1,5 +1,7 @@
 import { GeometryType, TransformationMode, moduleIdSymbol } from '@vcmap/core';
+import type { PluginConfigEditor, VcsPlugin, VcsUiApp } from '@vcmap/ui';
 import { version, name, mapVersion } from '../package.json';
+import type { EditorManager } from './editorManager.js';
 import { createSimpleEditorManager } from './editorManager.js';
 import { addToolButtons } from './util/toolbox.js';
 import { setupKeyListeners } from './util/keyListeners.js';
@@ -8,30 +10,68 @@ import SimpleEditorCategory, {
   createCategory,
 } from './category/simpleCategory.js';
 import { setupDrawWindow } from './util/windowHelper.js';
+import type { DrawConfig } from './defaultOptions.js';
 import getDefaultOptions from './defaultOptions.js';
 import ConfigEditor from './ConfigEditor.vue';
 
-export default function drawingPlugin(moduleConfig) {
-  /** @type {DrawConfig} */
-  const config = { ...getDefaultOptions(), ...structuredClone(moduleConfig) };
+export type DrawPlugin = VcsPlugin<
+  Partial<DrawConfig>,
+  Record<never, never>
+> & {
+  readonly config: Required<DrawConfig>;
+};
+
+export default function drawingPlugin(options: DrawConfig): DrawPlugin {
+  let destroyFunction: () => void;
+  let editorManager: EditorManager | undefined;
+  const config: Required<DrawConfig> = {
+    ...getDefaultOptions(),
+    ...structuredClone(options),
+  };
 
   return {
-    get name() {
+    get name(): string {
       return name;
     },
-    get version() {
+    get version(): string {
       return version;
     },
-    get mapVersion() {
+    get mapVersion(): string {
       return mapVersion;
     },
-    get config() {
+    get config(): Required<DrawConfig> {
       return structuredClone(config);
     },
+    async initialize(vcsUiApp: VcsUiApp): Promise<void> {
+      editorManager = createSimpleEditorManager(vcsUiApp);
+      const destroyButtons = addToolButtons(editorManager, vcsUiApp);
+      const destroyDrawWindow = setupDrawWindow(editorManager, vcsUiApp);
+      const destroyKeyListeners = setupKeyListeners(editorManager);
+      vcsUiApp.categoryClassRegistry.registerClass(
+        this[moduleIdSymbol],
+        SimpleEditorCategory.className,
+        SimpleEditorCategory,
+      );
+      const { destroy: destroySimpleCategory, editSelection } =
+        await createCategory(editorManager, vcsUiApp);
+      const destroyContextMenu = addContextMenu(
+        vcsUiApp,
+        editorManager,
+        this.name,
+        editSelection,
+      );
+      destroyFunction = (): void => {
+        destroyButtons();
+        destroyDrawWindow();
+        destroySimpleCategory();
+        destroyKeyListeners();
+        destroyContextMenu();
+      };
+    },
     getDefaultOptions,
-    toJSON() {
+    toJSON(): DrawConfig {
       const defaultOptions = getDefaultOptions();
-      const serializedConfig = {};
+      const serializedConfig: DrawConfig = {};
       if (
         config.altitudeModes.length !== defaultOptions.altitudeModes.length ||
         config.altitudeModes.some(
@@ -40,47 +80,19 @@ export default function drawingPlugin(moduleConfig) {
       ) {
         serializedConfig.altitudeModes = config.altitudeModes.slice();
       }
-
       return serializedConfig;
     },
-    getConfigEditors() {
+    getConfigEditors(): PluginConfigEditor<object>[] {
       return [
         {
-          title: 'drawing.config.title',
           component: ConfigEditor,
+          title: 'draw.config.title',
         },
       ];
     },
-    _destroy: () => {},
-    async initialize(vcsUiApp) {
-      this._editorManager = createSimpleEditorManager(vcsUiApp);
-      const destroyButtons = addToolButtons(this._editorManager, vcsUiApp);
-      const destroyDrawWindow = setupDrawWindow(this._editorManager, vcsUiApp);
-      const destroyKeyListeners = setupKeyListeners(this._editorManager);
-      vcsUiApp.categoryClassRegistry.registerClass(
-        this[moduleIdSymbol],
-        SimpleEditorCategory.className,
-        SimpleEditorCategory,
-      );
-      const { destroy: destroySimpleCategory, editSelection } =
-        await createCategory(this._editorManager, vcsUiApp);
-      const destoryContextMenu = addContextMenu(
-        vcsUiApp,
-        this._editorManager,
-        this.name,
-        editSelection,
-      );
-      this._destroy = () => {
-        destroyButtons();
-        destroyDrawWindow();
-        destroySimpleCategory();
-        destroyKeyListeners();
-        destoryContextMenu();
-      };
-    },
     i18n: {
       en: {
-        drawing: {
+        draw: {
           create: {
             [GeometryType.Point]: 'Draw points',
             [GeometryType.Polygon]: 'Draw polygons',
@@ -117,7 +129,7 @@ export default function drawingPlugin(moduleConfig) {
         },
       },
       de: {
-        drawing: {
+        draw: {
           create: {
             [GeometryType.Point]: 'Punkte zeichnen',
             [GeometryType.Polygon]: 'Polygone zeichnen',
@@ -154,11 +166,11 @@ export default function drawingPlugin(moduleConfig) {
         },
       },
     },
-    destroy() {
-      if (this._editorManager) {
-        this._editorManager.destroy();
-        this._destroy();
+    destroy(): void {
+      if (editorManager) {
+        editorManager.destroy();
       }
+      destroyFunction();
     },
   };
 }

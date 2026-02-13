@@ -1,48 +1,51 @@
 import { watch, ref } from 'vue';
+import type { CreateFeatureSession, GeometryType } from '@vcmap/core';
 import { SessionType } from '@vcmap/core';
+import type { VcsUiApp, WindowComponentOptions } from '@vcmap/ui';
 import { WindowSlot, VcsFeatureEditingWindow } from '@vcmap/ui';
 import { unByKey } from 'ol/Observable.js';
 import { name } from '../../package.json';
+import type { EditorManager } from '../editorManager.js';
+import type { DrawPlugin } from '../index.js';
 
 export const drawPluginWindowId = 'DrawPluginMainWindow';
 
 const headerTitle = ref();
 
-export function getDrawEditor(manager, app) {
-  const plugin = app.plugins.getByKey(name);
+export function getDrawEditor(
+  manager: EditorManager,
+  app: VcsUiApp,
+): WindowComponentOptions {
+  const plugin = app.plugins.getByKey(name) as DrawPlugin;
   const altitudeModes = plugin?.config?.altitudeModes;
 
   return {
     component: VcsFeatureEditingWindow,
-    provides: {
-      manager,
-    },
+    provides: { manager },
     state: {
       headerTitle,
       styles: { width: '280px', height: 'auto' },
       infoUrlCallback: app.getHelpUrlCallback('tools/drawingTool.html'),
     },
-    props: {
-      altitudeModes,
-    },
+    props: { altitudeModes },
   };
 }
 
-/**
- * @param {import("../editorManager.js").EditorManager} manager
- * @param {import("@vcmap/ui").VcsUiApp} app
- * @returns {function():void}
- */
-export function setupDrawWindow(manager, app) {
-  let renameListener = () => {};
+export function setupDrawWindow(
+  manager: EditorManager,
+  app: VcsUiApp,
+): () => void {
+  let renameListener: () => void = () => {};
 
-  function setHeaderTitle() {
+  function setHeaderTitle(): void {
     renameListener();
     const features = manager.currentFeatures.value;
     if (features.length > 1) {
       headerTitle.value = `(${features.length}) Features`;
     } else if (manager.currentSession.value?.type === SessionType.CREATE) {
-      headerTitle.value = `drawing.create.${manager.currentSession.value.geometryType}`;
+      const { geometryType } = manager.currentSession
+        .value as CreateFeatureSession<GeometryType>;
+      headerTitle.value = `draw.create.${geometryType}`;
     } else if (features.length) {
       const propertyChangeListener = features[0].on(
         'propertychange',
@@ -52,7 +55,7 @@ export function setupDrawWindow(manager, app) {
           }
         },
       );
-      renameListener = () => {
+      renameListener = (): void => {
         unByKey(propertyChangeListener);
       };
       headerTitle.value = features[0].get('title');
@@ -60,10 +63,8 @@ export function setupDrawWindow(manager, app) {
   }
 
   const featuresChangedListener = watch(manager.currentFeatures, (curr) => {
-    if (
-      curr[0] &&
-      !manager.currentLayer.value?.getFeatureById(curr[0]?.getId())
-    ) {
+    const featureId = curr[0]?.getId();
+    if (featureId && !manager.currentLayer.value?.getFeatureById(featureId)) {
       if (!app.windowManager.has(drawPluginWindowId)) {
         app.windowManager.add(
           {
@@ -84,16 +85,16 @@ export function setupDrawWindow(manager, app) {
   });
 
   const windowClosedListener = app.windowManager.removed.addEventListener(
-    (component) => {
+    async (component) => {
+      const featureId = manager.currentFeatures.value[0]?.getId();
       if (
         component.id === drawPluginWindowId &&
         manager.currentSession.value?.type === SessionType.CREATE &&
         (manager.currentFeatures.value.length === 0 ||
-          !manager.currentLayer.value?.getFeatureById(
-            manager.currentFeatures.value[0]?.getId(),
-          ))
+          !featureId ||
+          !manager.currentLayer.value?.getFeatureById(featureId))
       ) {
-        manager.stop();
+        await manager.stop();
       }
     },
   );

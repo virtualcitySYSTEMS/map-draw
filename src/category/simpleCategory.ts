@@ -1,3 +1,10 @@
+import type {
+  VectorLayer,
+  CategoryOptions,
+  VcsObjectOptions,
+  PanoramaImage,
+  VcsMap,
+} from '@vcmap/core';
 import {
   Category,
   writeGeoJSONFeature,
@@ -8,47 +15,55 @@ import {
   SessionType,
   FeatureVisibilityAction,
   CesiumMap,
-  OpenlayersMap,
   ObliqueMap,
+  OpenlayersMap,
   PanoramaMap,
 } from '@vcmap/core';
+import type {
+  CollectionComponentClass,
+  CollectionComponentListItem,
+  EditorCollectionComponentClass,
+  VcsUiApp,
+} from '@vcmap/ui';
 import {
+  callSafeAction,
   createListExportAction,
   createListImportAction,
   importIntoLayer,
   makeEditorCollectionComponentClass,
 } from '@vcmap/ui';
+import { getLogger } from '@vcsuite/logger';
 import { Feature } from 'ol';
 import { unByKey } from 'ol/Observable.js';
 import { reactive, watch } from 'vue';
 import { isEmpty } from 'ol/extent.js';
 import { name } from '../../package.json';
+import {
+  assertIsSelectSession,
+  isSelectSession,
+  type EditorManager,
+} from '../editorManager.js';
 import { exportFeatures } from '../util/actionHelper.js';
 import { getDrawEditor } from '../util/windowHelper.js';
 
-/**
- * @typedef {Object} SimpleDrawingItem
- * @property {string} id
- * @property {string} name
- * @property {import("ol").Feature} feature
- */
-
-/**
- * @enum {number}
- * @type {{SHAPE: number, TEXT: number, NONE: number, OBJECT: number}}
- */
-export const CategoryType = {
-  NONE: 0,
-  SHAPE: 1,
-  TEXT: 2,
-  OBJECT: 3,
+type SimpleDrawingItem = VcsObjectOptions & {
+  name: string;
+  feature: Feature;
 };
 
-/**
- * @param {import("ol").Feature} feature
- * @param {import("@vcmap/core").VectorLayer} layer
- */
-function setTitleOnFeature(feature, layer) {
+type DrawingCategoryOptions = CategoryOptions<SimpleDrawingItem> & {
+  categoryType: CategoryType;
+  layer: VectorLayer;
+};
+
+enum CategoryType {
+  NONE = 0,
+  SHAPE = 1,
+  TEXT = 2,
+  OBJECT = 3,
+}
+
+function setTitleOnFeature(feature: Feature, layer: VectorLayer): void {
   const geometry = feature.getGeometry();
   let typeName = 'Unknown';
   if (geometry) {
@@ -61,7 +76,7 @@ function setTitleOnFeature(feature, layer) {
   const sameTypeFeaturesNames = new Set(
     layer
       .getFeatures()
-      .filter((f) => f.getGeometry().getType() === typeName)
+      .filter((f) => f.getGeometry()?.getType() === typeName)
       .map((f) => f.get('title')),
   );
 
@@ -75,34 +90,25 @@ function setTitleOnFeature(feature, layer) {
   feature.set('title', featureName, true);
 }
 
-/**
- * @class
- * @extends {Category<SimpleDrawingItem>}
- */
-class SimpleEditorCategory extends Category {
-  static get className() {
+class SimpleEditorCategory extends Category<SimpleDrawingItem> {
+  static get className(): string {
     return 'SimpleEditorCategory';
   }
+  categoryType: CategoryType;
+  protected _layer: VectorLayer;
+  // eslint-disable-next-line class-methods-use-this
+  private _layerListeners: () => void = () => {};
 
-  constructor(options) {
+  constructor(options: DrawingCategoryOptions) {
     super(options);
-    /**
-     * @type {import("@vcmap/core").VectorLayer}
-     * @private
-     */
-    this._layer = null;
-    this._categoryType = options.categoryType;
-    this._layerListeners = () => {};
-    this._setCurrentLayer(options.layer);
+    this.categoryType = options.categoryType;
+    this._layer = options.layer;
+    this._updateLayerSource();
   }
 
-  /**
-   * @param {import("@vcmap/core").VectorLayer} layer
-   */
-  _setCurrentLayer(layer) {
+  private _updateLayerSource(): void {
     this._layerListeners();
-    this._layer = layer;
-    const source = layer.getSource();
+    const source = this._layer.getSource();
 
     // In case the collection already has layers
     [...this.collection].forEach((item) => {
@@ -113,35 +119,36 @@ class SimpleEditorCategory extends Category {
 
     const sourceListeners = [
       source.on('removefeature', ({ feature }) => {
-        const item = this.collection.getByKey(feature.getId());
+        const item = this.collection.getByKey(feature?.getId());
         if (item) {
           this.collection.remove(item);
         }
       }),
       source.on('addfeature', ({ feature }) => {
-        if (!this.collection.hasKey(feature.getId())) {
+        if (feature && !this.collection.hasKey(feature.getId())) {
           if (!feature.get('title')) {
-            setTitleOnFeature(feature, layer);
+            setTitleOnFeature(feature, this._layer);
           }
           this.collection.add({
-            name: feature.getId(),
+            name: String(feature.getId()),
             feature,
           });
         }
       }),
     ];
 
-    this._layerListeners = () => {
+    this._layerListeners = (): void => {
       unByKey(sourceListeners);
     };
   }
 
-  mergeOptions(options) {
+  mergeOptions(options: DrawingCategoryOptions): void {
     super.mergeOptions(options);
-    this._setCurrentLayer(options.layer);
+    this._layer = options.layer;
+    this._updateLayerSource();
   }
 
-  _itemAdded(item) {
+  protected _itemAdded(item: SimpleDrawingItem): void {
     // Is needed because in core the feature first gets removed, which triggers the source listener above and ends in an event trigger cicle that does not stop.
     // If in core intead of removing, just checking if it is already existing AND set item.name as features id ->>> no need to override original function
     if (!this._layer.getFeatureById(item.name)) {
@@ -155,24 +162,26 @@ class SimpleEditorCategory extends Category {
     }
   }
 
-  _itemRemoved(item) {
+  protected _itemRemoved(item: SimpleDrawingItem): void {
     if (this._layer.getFeatureById(item.name)) {
       this._layer.removeFeaturesById([item.name]);
     }
   }
 
   // eslint-disable-next-line class-methods-use-this
-  async _deserializeItem(item) {
+  protected _deserializeItem(
+    item: SimpleDrawingItem,
+  ): Promise<SimpleDrawingItem> {
     const { features } = parseGeoJSON(item.feature);
     if (features[0]) {
       // XXX do we warn on feature collection?
       item.feature = features[0];
     }
-    return item;
+    return Promise.resolve(item);
   }
 
   // eslint-disable-next-line class-methods-use-this
-  _serializeItem(item) {
+  protected _serializeItem(item: SimpleDrawingItem): SimpleDrawingItem {
     return {
       name: item.name,
       feature: writeGeoJSONFeature(item.feature),
@@ -182,24 +191,17 @@ class SimpleEditorCategory extends Category {
 
 export default SimpleEditorCategory;
 
-/**
- * @param {import("@vcmap/ui").VcsUiApp} vcsApp
- * @param {import("../editorManager").EditorManager} manager
- * @param {SimpleDrawingItem} featureItem
- * @param {Category<SimpleDrawingItem>} c
- * @param {import("@vcmap/ui").VcsListItem} categoryListItem
- */
 function itemMappingFunction(
-  vcsApp,
-  manager,
-  featureItem,
-  c,
-  categoryListItem,
-) {
+  vcsApp: VcsUiApp,
+  manager: EditorManager,
+  featureItem: SimpleDrawingItem,
+  _c: CollectionComponentClass<SimpleDrawingItem>,
+  categoryListItem: CollectionComponentListItem,
+): void {
   categoryListItem.title = featureItem.feature.get('title') ?? 'Object';
   const layer = manager.getDefaultLayer();
 
-  let hidden = layer.featureVisibility.hiddenObjects[featureItem.name];
+  let hidden = !!layer.featureVisibility.hiddenObjects[featureItem.name];
 
   const hideAction = reactive({
     name: 'hideAction',
@@ -213,7 +215,15 @@ function itemMappingFunction(
           const newSelection = manager.currentFeatures.value.filter(
             (feature) => feature.getId() !== featureItem.feature.getId(),
           );
-          manager.currentSession.value.setCurrentFeatures(newSelection);
+          assertIsSelectSession(manager.currentSession.value);
+          manager.currentSession.value
+            .setCurrentFeatures(newSelection)
+            .catch((e: unknown) => {
+              getLogger(name).error(
+                'Error updating current features after hiding feature',
+                e,
+              );
+            });
         }
       } else {
         layer.featureVisibility.showObjects([featureItem.name]);
@@ -236,13 +246,13 @@ function itemMappingFunction(
     },
   );
 
-  categoryListItem.selectionChanged = (selected) => {
+  categoryListItem.selectionChanged = (selected): void => {
     if (selected && hidden) {
-      hideAction.callback();
+      callSafeAction(hideAction);
     }
   };
 
-  categoryListItem.titleChanged = (newTitle) => {
+  categoryListItem.titleChanged = (newTitle): void => {
     featureItem.feature.set('title', newTitle);
     categoryListItem.title = newTitle;
   };
@@ -250,7 +260,7 @@ function itemMappingFunction(
   categoryListItem.actions.push(
     hideAction,
     {
-      name: 'drawing.category.zoomTo',
+      name: 'draw.category.zoomTo',
       async callback() {
         const extent = featureItem.feature.getGeometry()?.getExtent?.();
         if (extent && !isEmpty(extent)) {
@@ -260,34 +270,35 @@ function itemMappingFunction(
               projection: mercatorProjection.toJSON(),
             }),
           );
-          vp.animate = true;
-          await vcsApp.maps.activeMap?.gotoViewpoint(vp);
+          if (vp) {
+            vp.animate = true;
+            await vcsApp.maps.activeMap?.gotoViewpoint(vp);
+          }
         }
       },
     },
     {
-      name: 'drawing.category.edit',
+      name: 'draw.category.edit',
       callback() {
         if (hidden) {
-          hideAction.callback();
+          callSafeAction(hideAction);
         }
         if (manager.currentLayer.value !== layer) {
           manager.currentLayer.value = layer;
         }
-        manager.startEditSession(featureItem.feature);
+        manager.startEditSession(featureItem.feature).catch((e: unknown) => {
+          getLogger(name).error('Error starting edit session for feature', e);
+        });
       },
     },
   );
 
-  let currentImageListener = () => {};
-  /**
-   * @param {import("@vcmap/core")=} image
-   */
-  const panoramaImageChanged = (image) => {
+  let currentImageListener = (): void => {};
+  const panoramaImageChanged = (image?: PanoramaImage): void => {
     categoryListItem.disabled = !image?.hasDepth;
   };
 
-  const mapChanged = (map) => {
+  const mapChanged = (map: VcsMap | null): void => {
     currentImageListener();
     if (
       map instanceof OpenlayersMap ||
@@ -308,20 +319,18 @@ function itemMappingFunction(
     vcsApp.maps.mapActivated.addEventListener(mapChanged);
   mapChanged(vcsApp.maps.activeMap);
 
-  categoryListItem.destroy = () => {
+  categoryListItem.destroy = (): void => {
     hideListener();
     mapChangedListener();
     currentImageListener();
   };
 }
 
-/**
- * @param {EditorManager} manager
- * @param {import("@vcmap/ui").CollectionComponent} categoryUiItem
- * @param {import("@vcmap/core").VectorLayer} layer
- * @returns {(function(): void)}
- */
-function syncSelection(manager, categoryUiItem, layer) {
+function syncSelection(
+  manager: EditorManager,
+  categoryUiItem: EditorCollectionComponentClass<SimpleDrawingItem>,
+  layer: VectorLayer,
+): () => void {
   let selectionRevision = 0;
   let featureRevision = 0;
 
@@ -342,9 +351,18 @@ function syncSelection(manager, categoryUiItem, layer) {
       ) {
         manager.startSelectSession();
       }
-      manager.currentSession.value?.setCurrentFeatures(
-        layer.getFeaturesById(selection.value.map((i) => i.name)),
-      );
+      if (isSelectSession(manager.currentSession.value)) {
+        manager.currentSession.value
+          .setCurrentFeatures(
+            layer.getFeaturesById(selection.value.map((i) => i.name)),
+          )
+          .catch((e: unknown) => {
+            getLogger(name).error(
+              'Error updating current features from selection',
+              e,
+            );
+          });
+      }
       selection.value.forEach((featureItem) => {
         if (layer.featureVisibility.hiddenObjects[featureItem.name]) {
           layer.featureVisibility.showObjects([featureItem.name]);
@@ -372,18 +390,17 @@ function syncSelection(manager, categoryUiItem, layer) {
 
 /**
  * Visibility state of a layers features.
- * @enum {string}
  */
-const VisibilityState = {
-  ALL: 'all',
-  NONE: 'none',
-  SOME: 'some',
-};
+enum VisibilityState {
+  ALL = 'all',
+  NONE = 'none',
+  SOME = 'some',
+}
 
 /**
  * @enum {string}
  */
-const VisibilityStateIcon = {
+const visibilityStateIcon: Record<VisibilityState, string> = {
   [VisibilityState.ALL]: '$vcsCheckboxChecked',
   [VisibilityState.NONE]: '$vcsCheckbox',
   [VisibilityState.SOME]: '$vcsCheckboxIndeterminate',
@@ -391,14 +408,12 @@ const VisibilityStateIcon = {
 
 /**
  * Calculates the visibility state of a layer based on its features.
- * @param {Layer} layer - The layer to calculate the visibility state for.
- * @returns {VisibilityState} The visibility state of the layer.
  */
-function getVisibilityState(layer) {
+function getVisibilityState(layer: VectorLayer): VisibilityState {
   const { hiddenObjects } = layer.featureVisibility;
   const features = layer.getFeatures();
   const visibleFeatures = features.filter(
-    (feature) => !hiddenObjects[feature.getId()],
+    (feature) => !hiddenObjects[feature.getId()!],
   );
   if (visibleFeatures.length === features.length) {
     return VisibilityState.ALL;
@@ -409,12 +424,13 @@ function getVisibilityState(layer) {
   return VisibilityState.SOME;
 }
 
-/**
- * @param {import("../editorManager").EditorManager} manager
- * @param {import("@vcmap/ui").VcsUiApp} vcsApp
- * @returns {Promise<{destroy: function():void, editSelection: function():void}>}
- */
-export async function createCategory(manager, vcsApp) {
+export async function createCategory(
+  manager: EditorManager,
+  vcsApp: VcsUiApp,
+): Promise<{
+  destroy: () => void;
+  editSelection: () => void;
+}> {
   const layer = manager.getDefaultLayer();
   let visibilityState = getVisibilityState(layer);
 
@@ -422,37 +438,37 @@ export async function createCategory(manager, vcsApp) {
     name: 'hide-all',
     title:
       visibilityState === VisibilityState.ALL
-        ? 'drawing.category.hideAll'
-        : 'drawing.category.showAll',
-    icon: VisibilityStateIcon[visibilityState],
+        ? 'draw.category.hideAll'
+        : 'draw.category.showAll',
+    icon: visibilityStateIcon[visibilityState],
     callback() {
       if (
         visibilityState === VisibilityState.ALL &&
         layer.getFeatures()?.length
       ) {
         layer.featureVisibility.hideObjects(
-          layer.getFeatures().map((feature) => feature.getId()),
+          layer.getFeatures().map((feature) => feature.getId()!),
         );
-        if (manager.currentFeatures.value) {
+        if (isSelectSession(manager.currentSession.value)) {
           manager.currentSession.value.clearSelection?.();
         }
         this.icon = '$vcsCheckbox';
-        this.title = 'drawing.category.showAll';
+        this.title = 'draw.category.showAll';
       } else {
         layer.featureVisibility.clearHiddenObjects();
         this.icon = '$vcsCheckboxChecked';
-        this.title = 'drawing.category.hideAll';
+        this.title = 'draw.category.hideAll';
       }
     },
   });
 
-  function updateHideAllAction() {
+  function updateHideAllAction(): void {
     visibilityState = getVisibilityState(layer);
-    hideAllAction.icon = VisibilityStateIcon[visibilityState];
+    hideAllAction.icon = visibilityStateIcon[visibilityState];
     hideAllAction.title =
       visibilityState === VisibilityState.ALL
-        ? 'drawing.category.hideAll'
-        : 'drawing.category.showAll';
+        ? 'draw.category.hideAll'
+        : 'draw.category.showAll';
   }
 
   const hideAllEventsKeys = [
@@ -469,38 +485,32 @@ export async function createCategory(manager, vcsApp) {
         updateHideAllAction();
       }
     }),
-    () => {
+    (): void => {
       unByKey(hideAllEventsKeys);
     },
   ];
-
-  const { collectionComponent: categoryUiItem, category } =
-    /** @type {{ collectionComponent: import("@vcmap/ui").CollectionComponentClass<Feature> }} */ (
-      await vcsApp.categoryManager.requestCategory(
-        {
-          type: SimpleEditorCategory.className,
-          name: `Simple Drawing - shape`,
-          title: 'drawing.category.shape',
-          categoryType: CategoryType.SHAPE,
-          layer,
-          featureProperty: 'feature',
-        },
-        name,
-        {
-          selectable: true,
-          renamable: true,
-          removable: true,
-          overflowCount: 3,
-        },
-      )
+  const categoryOptions: DrawingCategoryOptions = {
+    type: SimpleEditorCategory.className,
+    name: `Simple Drawing - shape`,
+    title: 'draw.category.shape',
+    featureProperty: 'feature',
+    layer,
+    categoryType: CategoryType.SHAPE,
+  };
+  const { collectionComponent, category } =
+    await vcsApp.categoryManager.requestCategory<SimpleDrawingItem>(
+      categoryOptions,
+      name,
+      { selectable: true, renamable: true, removable: true, overflowCount: 3 },
     );
 
   const drawEditor = getDrawEditor(manager, vcsApp);
 
-  makeEditorCollectionComponentClass(vcsApp, categoryUiItem, {
-    editor: drawEditor,
-    multiEditor: drawEditor,
-  });
+  const categoryUiItem = makeEditorCollectionComponentClass<SimpleDrawingItem>(
+    vcsApp,
+    collectionComponent,
+    { editor: drawEditor, multiEditor: drawEditor },
+  );
 
   const { action: importAction, destroy: destroyImportAction } =
     createListImportAction(
@@ -532,15 +542,17 @@ export async function createCategory(manager, vcsApp) {
     { action: hideAllAction, owner: name },
   ]);
 
-  categoryUiItem.addItemMapping({
-    mappingFunction: itemMappingFunction.bind(null, vcsApp, manager),
-    owner: name,
-  });
+  vcsApp.categoryManager.addMappingFunction(
+    () => true,
+    itemMappingFunction.bind(null, vcsApp, manager),
+    name,
+    [category.name],
+  );
 
   category.collection.removed.addEventListener((item) => {
     if (manager.currentFeatures.value.includes(item.feature)) {
       const newFeatures = manager.currentFeatures.value.filter(
-        (feature) => feature.getId() !== item.feature.getId(),
+        (feature: Feature) => feature.getId() !== item.feature.getId(),
       );
       manager.currentFeatures.value = newFeatures;
     }
@@ -548,15 +560,18 @@ export async function createCategory(manager, vcsApp) {
 
   const selectionWatchers = syncSelection(manager, categoryUiItem, layer);
   return {
-    destroy: () => {
+    destroy: (): void => {
       selectionWatchers();
-      hideAllActionListeners.forEach((cb) => cb());
+      hideAllActionListeners.forEach((cb) => {
+        cb();
+      });
       vcsApp.categoryManager.removeOwner(name);
       destroyExportAction();
       destroyImportAction();
     },
-    editSelection: () => {
+    editSelection: (): void => {
       if (categoryUiItem.selection.value.length === 1) {
+        // @ts-expect-error ignore
         categoryUiItem.openEditorWindow();
       } else if (categoryUiItem.selection.value.length > 1) {
         categoryUiItem.openMultiEditorWindow();

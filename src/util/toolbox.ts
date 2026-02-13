@@ -1,5 +1,5 @@
-import { getLogger } from '@vcsuite/logger';
 import { reactive, watch } from 'vue';
+import type { CreateFeatureSession, PanoramaImage, VcsMap } from '@vcmap/core';
 import {
   CesiumMap,
   GeometryType,
@@ -8,16 +8,23 @@ import {
   PanoramaMap,
   SessionType,
 } from '@vcmap/core';
+import type {
+  SelectToolboxComponentOptions,
+  SingleToolboxComponentOptions,
+  ToolboxSelectItem,
+  VcsUiApp,
+} from '@vcmap/ui';
 import { ToolboxType } from '@vcmap/ui';
+import { getLogger } from '@vcsuite/logger';
 import { name } from '../../package.json';
+import type { EditorManager } from '../editorManager.js';
 
-/**
- * @typedef {Object} EditorToolbox
- * @property {import("@vcmap/ui/src/manager/toolbox/toolboxManager").SingleToolboxComponentOptions|import("@vcmap/ui/src/manager/toolbox/toolboxManager").SelectToolboxComponentOptions} toolbox
- * @property {function():void} destroy
- */
+type EditorToolbox = {
+  toolbox: SingleToolboxComponentOptions | SelectToolboxComponentOptions;
+  destroy: () => void;
+};
 
-export const GeometryTypeIcon = {
+const geometryTypeIcon: Record<GeometryType, string> = {
   [GeometryType.Point]: '$vcsPoint',
   [GeometryType.Polygon]: '$vcsTriangle',
   [GeometryType.LineString]: '$vcsLine',
@@ -25,15 +32,13 @@ export const GeometryTypeIcon = {
   [GeometryType.Circle]: '$vcsCircle',
 };
 
-/**
- * @param {EditorManager} manager
- * @returns {EditorToolbox}
- */
-function createCreateToolbox(manager) {
-  const createCreateButton = (geometryType) => ({
+function createCreateToolbox(manager: EditorManager): EditorToolbox {
+  const createCreateButton = (
+    geometryType: GeometryType,
+  ): ToolboxSelectItem => ({
     name: geometryType,
-    title: `drawing.create.${geometryType}`,
-    icon: GeometryTypeIcon[geometryType],
+    title: `draw.create.${geometryType}`,
+    icon: geometryTypeIcon[geometryType],
   });
 
   const toolbox = {
@@ -42,9 +47,9 @@ function createCreateToolbox(manager) {
       name: 'creation',
       currentIndex: 3,
       active: false,
-      callback() {
+      async callback() {
         if (this.active) {
-          manager.stop();
+          await manager.stop();
         } else {
           const toolName = this.tools[this.currentIndex].name;
           if (toolName === SessionType.SELECT) {
@@ -54,7 +59,7 @@ function createCreateToolbox(manager) {
           }
         }
       },
-      selected(newIndex) {
+      selected(newIndex: number) {
         if (newIndex !== this.currentIndex) {
           this.currentIndex = newIndex;
           const toolName = this.tools[this.currentIndex].name;
@@ -69,7 +74,7 @@ function createCreateToolbox(manager) {
         {
           name: SessionType.SELECT,
           icon: '$vcsPointSelect',
-          title: 'drawing.select',
+          title: 'draw.select',
         },
         createCreateButton(GeometryType.Point),
         createCreateButton(GeometryType.LineString),
@@ -82,13 +87,16 @@ function createCreateToolbox(manager) {
 
   const destroy = watch(manager.currentSession, () => {
     const currentSession = manager.currentSession.value;
+
     toolbox.action.active = !!currentSession;
     if (toolbox.action.active) {
       const toolName =
         currentSession?.type === SessionType.CREATE
-          ? currentSession.geometryType
+          ? (currentSession as CreateFeatureSession<GeometryType>).geometryType
           : SessionType.SELECT;
-      const index = toolbox.action.tools.findIndex((t) => t.name === toolName);
+      const index = toolbox.action.tools.findIndex(
+        (t) => (t.name as GeometryType | SessionType) === toolName,
+      );
       if (toolbox.action.currentIndex !== index) {
         toolbox.action.currentIndex = index;
       }
@@ -101,34 +109,29 @@ function createCreateToolbox(manager) {
   };
 }
 
-/**
- * @param {EditorManager} manager
- * @param {import("@vcmap/ui").VcsUiApp} app
- * @returns {function():void}
- */
-export function addToolButtons(manager, app) {
+export function addToolButtons(
+  manager: EditorManager,
+  app: VcsUiApp,
+): () => void {
   const { toolbox: createToolbox, destroy: destroyCreateToolbox } =
     createCreateToolbox(manager);
   const createId = app.toolboxManager.add(createToolbox, name).id;
-  let currentImageListener = () => {};
-  const disable = () => {
-    manager.stop().catch((err) => {
-      getLogger(name).error(err);
+  let currentImageListener = (): void => {};
+  const disable = (): void => {
+    manager.stop().catch((e: unknown) => {
+      getLogger(name).error('Error stopping current editor session', e);
     });
     createToolbox.action.disabled = true;
   };
 
-  /**
-   * @param {import("@vcmap/core")=} image
-   */
-  const panoramaImageChanged = (image) => {
+  const panoramaImageChanged = (image?: PanoramaImage): void => {
     if (image?.hasDepth) {
       createToolbox.action.disabled = false;
     } else {
       disable();
     }
   };
-  const mapChanged = (map) => {
+  const mapChanged = (map: VcsMap | null): void => {
     currentImageListener();
     if (
       map instanceof OpenlayersMap ||

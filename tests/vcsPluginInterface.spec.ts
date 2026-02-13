@@ -1,22 +1,35 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import type { VcsPlugin } from '@vcmap/ui';
 import { VcsUiApp, loadPlugin } from '@vcmap/ui';
 import plugin from '../src/index.js';
 import packageJSON from '../package.json';
 
-function sleep(ms = 0) {
+function sleep(ms = 0): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
 }
 
-window.VcsPluginLoaderFunction = () => ({
-  default: (config, baseUrl) => plugin(config, baseUrl),
+type TestPluginInstance = VcsPlugin<Record<never, never>, Record<never, never>>;
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+window.VcsPluginLoaderFunction = (
+  name: string,
+  module: string,
+): {
+  default: () => TestPluginInstance;
+} => ({
+  default: (config?: Record<string, unknown>) =>
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    plugin({ name, ...(config ?? {}) }, module),
 });
 
 const testPropSymbol = Symbol('testProp');
 
 describe('VcsPlugin Interface test', () => {
-  let pluginInstance;
+  let pluginInstance: TestPluginInstance | null;
 
   beforeAll(async () => {
     pluginInstance = await loadPlugin(packageJSON.name, {
@@ -53,13 +66,12 @@ describe('VcsPlugin Interface test', () => {
       }
     });
 
-    // eslint-disable-next-line mocha/no-skipped-tests
-    it.skip('should use unscoped plugin name as namespace for plugin specific i18n entries', () => {
+    it('should use unscoped, camel-case plugin name as namespace for plugin specific i18n entries', () => {
       if (pluginInstance?.i18n) {
         expect(pluginInstance.i18n).to.be.a('object');
         const [scope, name] = packageJSON.name.split('/');
         const unscopedName = name || scope;
-        const camelCaseName = unscopedName.replace(/-./g, (x) =>
+        const camelCaseName = unscopedName.replace(/-./g, (x: string) =>
           x[1].toUpperCase(),
         );
         Object.values(pluginInstance.i18n).forEach((locale) => {
@@ -73,6 +85,22 @@ describe('VcsPlugin Interface test', () => {
     it('may implement initialize', () => {
       if (pluginInstance?.initialize) {
         expect(pluginInstance.initialize).to.be.a('function');
+        expect(
+          pluginInstance.initialize.bind(
+            pluginInstance,
+            new VcsUiApp(),
+            undefined,
+          ),
+        ).to.not.throw;
+      }
+    });
+
+    it('may implement onVcsAppMounted', () => {
+      if (pluginInstance?.onVcsAppMounted) {
+        expect(pluginInstance.onVcsAppMounted).to.be.a('function');
+        expect(
+          pluginInstance.onVcsAppMounted.bind(pluginInstance, new VcsUiApp()),
+        ).to.not.throw;
       }
     });
 
@@ -106,7 +134,13 @@ describe('VcsPlugin Interface test', () => {
       otherPluginInstance.destroy;
     });
 
-    it('should return changed altitude modes of same length as defualt', async () => {
+    it('may return default options', () => {
+      if (pluginInstance?.getDefaultOptions) {
+        expect(pluginInstance.getDefaultOptions()).to.be.a('object');
+      }
+    });
+
+    it('should return changed altitude modes of same length as default', async () => {
       const altitudeModesOfSameLengthAsDefault = [
         'clampToGround',
         'clampToTerrain',
@@ -126,15 +160,23 @@ describe('VcsPlugin Interface test', () => {
         .and.to.have.members(altitudeModesOfSameLengthAsDefault);
       otherPluginInstance.destroy;
     });
+
+    it('may implement toJSON returning the plugin config', () => {
+      if (pluginInstance?.toJSON) {
+        expect(pluginInstance.toJSON()).to.be.a('object');
+      }
+    });
   });
 
   describe('shadowing a plugin', () => {
-    let app;
-    let pluginInstance2;
+    let app: VcsUiApp;
+    let pluginInstance2:
+      | (TestPluginInstance & { [testPropSymbol]?: string })
+      | null;
 
     beforeAll(async () => {
       app = new VcsUiApp();
-      app.plugins.add(pluginInstance);
+      app.plugins.add(pluginInstance!);
       pluginInstance2 = await loadPlugin(packageJSON.name, {
         name: packageJSON.name,
         version: '2.0.0',
@@ -150,8 +192,8 @@ describe('VcsPlugin Interface test', () => {
     });
 
     it('should override the plugin correctly', () => {
-      expect(() => app.plugins.override(pluginInstance2)).to.not.throw;
-      app.plugins.override(pluginInstance2);
+      expect(() => app.plugins.override(pluginInstance2!)).to.not.throw;
+      app.plugins.override(pluginInstance2!);
       expect(app.plugins.getByKey(packageJSON.name)).to.have.property(
         testPropSymbol,
         'test',
@@ -160,8 +202,10 @@ describe('VcsPlugin Interface test', () => {
     });
 
     it('should reincarnate the plugin correctly', async () => {
-      expect(() => app.plugins.remove(pluginInstance2)).to.not.throw;
-      app.plugins.remove(pluginInstance2);
+      expect(() => {
+        app.plugins.remove(pluginInstance2!);
+      }).to.not.throw;
+      app.plugins.remove(pluginInstance2!);
       await sleep(0);
       expect(app.plugins.getByKey(packageJSON.name)).not.to.have.property(
         testPropSymbol,

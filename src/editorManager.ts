@@ -1,4 +1,13 @@
 import { watch, shallowRef, nextTick } from 'vue';
+import type { ShallowRef } from 'vue';
+import type {
+  CreateFeatureSession,
+  EditFeaturesSession,
+  EditGeometrySession,
+  EditorSession,
+  SelectFeaturesSession,
+  VectorStyleItemOptions,
+} from '@vcmap/core';
 import {
   GeometryType,
   SelectionMode,
@@ -18,42 +27,45 @@ import {
   vectorStyleSymbol,
   VectorStyleItem,
   getStyleOptions,
-  ObliqueMap,
   PanoramaMap,
   getHeightFromTerrainProvider,
+  ObliqueMap,
 } from '@vcmap/core';
 import { Feature } from 'ol';
+import type { CesiumTerrainProvider } from '@vcmap-cesium/engine';
+import { getLogger } from '@vcsuite/logger';
+import type { VcsUiApp } from '@vcmap/ui';
 import { LineString, Point, Polygon } from 'ol/geom';
 import { unByKey } from 'ol/Observable.js';
+import type { Style } from 'ol/style.js';
+import { name } from '../package.json';
 
-/**
- * @typedef {Object} EditorManager
- * @property {import("vue").ShallowRef<null|import("@vcmap/core").EditorSession>} currentSession
- * @property {import("vue").ShallowRef<null|import("@vcmap/core").EditorSession>} currentEditSession
- * @property {import("vue").ShallowRef<Array<import("ol").Feature>>} currentFeatures
- * @property {import("vue").ShallowRef<import("@vcmap/core").VectorLayer>} currentLayer
- * @property {function(import("@vcmap/core").GeometryType):void} startCreateSession
- * @property {function(import("ol").Feature[]=):void} startSelectSession - optional features to select
- * @property {function(import("ol").Feature=):Promise<void>} startEditSession - optional feature to select
- * @property {function(import("@vcmap/core").TransformationMode, import("ol").Feature[]=):void} startTransformSession
- * @property {function():import("@vcmap/core").VectorLayer} getDefaultLayer
- * @property {function():void} placeCurrentFeaturesOnTerrain - Places features on top of the terrain. When multiple features are selected, the relative position is not changed.
- * @property {function():Promise<void>} stop
- * @property {function():Promise<void>} stopEditing
- * @property {function():void} destroy
- */
+export type EditorManager = {
+  currentSession: ShallowRef<EditorSession | null>;
+  currentEditSession: ShallowRef<EditorSession | null>;
+  currentFeatures: ShallowRef<Feature[]>;
+  currentLayer: ShallowRef<VectorLayer>;
+  startCreateSession(geometryType: GeometryType): void;
+  startSelectSession(features?: Feature[]): void;
+  startEditSession(feature?: Feature): Promise<void>;
+  startTransformSession(
+    mode: TransformationMode,
+    features?: Feature[],
+  ): Promise<void>;
+  getDefaultLayer(): VectorLayer;
+  placeCurrentFeaturesOnTerrain(): Promise<void>;
+  stop(): Promise<void>;
+  stopEditing(): Promise<void>;
+  destroy(): void;
+};
 
 export const selectInteractionId = 'select_interaction_id';
 
-/**
- * @param {import("@vcmap/ui").VcsUiApp} app
- * @returns {import("@vcmap/core").VectorLayer}
- */
-function createSimpleEditorLayer(app) {
+function createSimpleEditorLayer(app: VcsUiApp): VectorLayer {
   const layer = new VectorLayer({
     projection: mercatorProjection.toJSON(),
     zIndex: maxZIndex - 1,
-    mapTypes: [
+    mapNames: [
       CesiumMap.className,
       OpenlayersMap.className,
       ObliqueMap.className,
@@ -61,29 +73,45 @@ function createSimpleEditorLayer(app) {
     ],
   });
   markVolatile(layer);
-  layer.activate();
+  layer.activate().catch((e: unknown) => {
+    getLogger(name).error('Error activating simple editor layer', e);
+  });
   app.layers.add(layer);
-
   return layer;
 }
 
-/**
- * @param {import("@vcmap/core").VcsApp} app
- * @param {import("@vcmap/core").EditorSession} session
- * @param {import("vue").ShallowRef<Array<import("ol").Feature>>} currentFeatures
- * @param {import("@vcmap/core").VectorLayer} layer
- * @param {import("ol").Feature} templateFeature
- * @returns {function():void}
- */
+export function isCreateSession(
+  session?: EditorSession | null,
+): session is CreateFeatureSession<GeometryType> {
+  return !!session && session.type === SessionType.CREATE;
+}
+export function isSelectSession(
+  session?: EditorSession | null,
+): session is SelectFeaturesSession {
+  return !!session && session.type === SessionType.SELECT;
+}
+export function isEditGeometrySession(
+  session?: EditorSession | null,
+): session is EditGeometrySession {
+  return !!session && session.type === SessionType.EDIT_GEOMETRY;
+}
+export function assertIsSelectSession(
+  session?: EditorSession | null,
+): asserts session is SelectFeaturesSession {
+  if (!isSelectSession(session)) {
+    throw new Error('Session is not a SelectFeaturesSession');
+  }
+}
+
 function setupSessionListener(
-  app,
-  session,
-  currentFeatures,
-  layer,
-  templateFeature,
-) {
-  const listeners = [];
-  if (session.type === SessionType.SELECT) {
+  app: VcsUiApp,
+  session: EditorSession,
+  currentFeatures: ShallowRef<Feature[]>,
+  layer: VectorLayer,
+  templateFeature: Feature | undefined,
+): () => void {
+  const listeners: (() => void)[] = [];
+  if (isSelectSession(session)) {
     listeners.push(
       session.featuresChanged.addEventListener((newFeatures) => {
         currentFeatures.value = newFeatures;
@@ -91,96 +119,100 @@ function setupSessionListener(
     );
   }
 
-  if (session.type === SessionType.CREATE) {
+  if (isCreateSession(session)) {
     listeners.push(
       session.featureCreated.addEventListener((newFeature) => {
         currentFeatures.value = [newFeature];
         const style =
-          templateFeature.getStyle()?.clone() || layer.style.style.clone();
-        const properties = templateFeature.getProperties();
-        delete properties.geometry; // delete geomertry from template properties
-        if (app.maps.activeMap instanceof OpenlayersMap) {
+          (templateFeature?.getStyle() as Style | undefined)?.clone() ||
+          (layer.style.style as Style).clone();
+        const properties = templateFeature?.getProperties();
+        delete properties?.geometry; // delete geomertry from template properties
+        if (properties && app.maps.activeMap instanceof OpenlayersMap) {
           properties.olcs_altitudeMode = 'clampToGround';
         }
         currentFeatures.value[0].setStyle(style);
-        const styleOptions = getStyleOptions(style);
+        const styleOptions = getStyleOptions(style) as VectorStyleItemOptions;
         if (styleOptions.text?.text) {
-          styleOptions.label = styleOptions.text.text;
+          styleOptions.label = Array.isArray(styleOptions.text.text)
+            ? styleOptions.text.text.map(String).join('')
+            : styleOptions.text.text;
         }
         currentFeatures.value[0][vectorStyleSymbol] = new VectorStyleItem(
           styleOptions,
         );
-        if (Object.keys(properties).length) {
+        if (properties && Object.keys(properties).length) {
           currentFeatures.value[0].setProperties(properties);
         }
       }),
-      () => {
+      (): void => {
         app.maps.eventHandler.featureInteraction.pullPickedPosition = 0;
       },
     );
 
     listeners.push(
       session.creationFinished.addEventListener(() => {
-        currentFeatures.value = [templateFeature];
+        currentFeatures.value = [templateFeature!];
       }),
     );
   }
 
   return () => {
-    listeners.forEach((l) => l());
+    listeners.forEach((l) => {
+      l();
+    });
   };
 }
 
 /**
  * Creates listeners that listen to select session changes and apply these to the edit sessions.
- * @param {import("@vcmap/core").SelectFeaturesSession} selectSession
- * @param {import("@vcmap/core").EditFeaturesSession | import("@vcmap/core").EditGeometrySession} editSession
- * @returns {function():void} Remove listeners
  */
-function setupEditSessionListeners(selectSession, editSession) {
-  let updateFeatures;
+function setupEditSessionListeners(
+  selectSession: SelectFeaturesSession,
+  editSession: EditGeometrySession | EditFeaturesSession,
+): () => void {
+  let updateFeatures: (newFeatures: Feature[]) => void;
   if (editSession.type === SessionType.EDIT_FEATURES) {
-    updateFeatures = (newFeatures) => {
+    updateFeatures = (newFeatures): void => {
       editSession.setFeatures(newFeatures);
     };
-  } else if (editSession.type === SessionType.EDIT_GEOMETRY) {
-    updateFeatures = (newFeatures) => {
+  } else if (isEditGeometrySession(editSession)) {
+    updateFeatures = (newFeatures): void => {
       editSession.setFeature(newFeatures[0]);
     };
   }
   const featuresChangesListener =
-    selectSession.featuresChanged.addEventListener(updateFeatures);
-  const stopListener = selectSession.stopped.addEventListener(editSession.stop);
+    selectSession.featuresChanged.addEventListener(updateFeatures!);
+  const stopListener = selectSession.stopped.addEventListener((): void => {
+    editSession.stop();
+  });
 
-  return () => {
+  return (): void => {
     featuresChangesListener();
     stopListener();
   };
 }
 
-/**
- * @param {import("@vcmap/ui").VcsUiApp} app
- * @returns {EditorManager}
- */
-export function createSimpleEditorManager(app) {
-  /** @type {import('vue').ShallowRef<import('@vcmap/core').EditorSession | null>} */
-  const currentSession = shallowRef(null);
-  /** @type {import('vue').ShallowRef<import('@vcmap/core').EditorSession | null>} */
-  const currentEditSession = shallowRef(null);
-  const currentFeatures = shallowRef([]);
-  let templateFeature;
+export function createSimpleEditorManager(app: VcsUiApp): EditorManager {
+  const currentSession = shallowRef<EditorSession | null>(null);
+  const currentEditSession = shallowRef<
+    EditGeometrySession | EditFeaturesSession | null
+  >(null);
+  const currentFeatures = shallowRef<Feature[]>([]);
   const layer = createSimpleEditorLayer(app);
   const currentLayer = shallowRef(layer);
-  let sessionListener = () => {};
-  let editSessionListener = () => {};
-  let sessionStoppedListener = () => {};
-  let editSessionStoppedListener = () => {};
+
+  let templateFeature: Feature | undefined;
+  let sessionListener = (): void => {};
+  let editSessionListener = (): void => {};
+  let sessionStoppedListener = (): void => {};
+  let editSessionStoppedListener = (): void => {};
 
   /**
    * Stops running sessions and starts a new one.
-   * @param {import('@vcmap/core').EditorSession | null} newSession The new editor session to be started.
+   * @param newSession The new editor session to be started.
    */
-  function setCurrentSession(newSession) {
+  function setCurrentSession(newSession: EditorSession | null): void {
     sessionStoppedListener();
     sessionListener();
     currentFeatures.value = [];
@@ -188,8 +220,11 @@ export function createSimpleEditorManager(app) {
 
     currentSession.value = newSession;
     if (currentSession.value) {
-      sessionStoppedListener =
-        currentSession.value.stopped.addEventListener(setCurrentSession);
+      sessionStoppedListener = currentSession.value.stopped.addEventListener(
+        () => {
+          setCurrentSession(null);
+        },
+      );
 
       sessionListener = setupSessionListener(
         app,
@@ -199,17 +234,22 @@ export function createSimpleEditorManager(app) {
         templateFeature,
       );
     } else {
-      sessionStoppedListener = () => {};
-      sessionListener = () => {};
+      sessionStoppedListener = (): void => {};
+      sessionListener = (): void => {};
     }
   }
 
   /**
    * Sets a new edit sesstion (either features or geometry) and makes sure that the current edit session is stopped and there is a selection session running.
-   * @param {(function():import("@vcmap/core").EditFeaturesSession | import("@vcmap/core").EditGeometrySession) | null} newSessionCallback
-   * @param {import("ol").Feature[] | import("ol").Feature } [features] Initially selected features
+   * @param newSessionCallback
+   * @param features Initially selected features
    */
-  async function setCurrentEditSession(newSessionCallback, features) {
+  async function setCurrentEditSession(
+    newSessionCallback:
+      | (() => EditFeaturesSession | EditGeometrySession)
+      | null,
+    features?: Feature[] | Feature,
+  ): Promise<void> {
     editSessionStoppedListener();
     editSessionListener();
     currentEditSession.value?.stop?.();
@@ -217,11 +257,10 @@ export function createSimpleEditorManager(app) {
     if (newSession) {
       // next tick is needed because onUnmounted the window ends the current editing session.
       await nextTick();
-      const selectionMode =
-        newSession.type === SessionType.EDIT_GEOMETRY
-          ? SelectionMode.SINGLE
-          : SelectionMode.MULTI;
-      if (!(currentSession.value?.type === SessionType.SELECT)) {
+      const selectionMode = isEditGeometrySession(newSession)
+        ? SelectionMode.SINGLE
+        : SelectionMode.MULTI;
+      if (!isSelectSession(currentSession.value)) {
         setCurrentSession(
           startSelectFeaturesSession(
             app,
@@ -233,9 +272,10 @@ export function createSimpleEditorManager(app) {
       } else {
         currentSession.value.setMode(selectionMode);
       }
+      assertIsSelectSession(currentSession.value);
 
-      editSessionStoppedListener = newSession.stopped.addEventListener(
-        setCurrentEditSession,
+      editSessionStoppedListener = newSession.stopped.addEventListener(() =>
+        setCurrentEditSession(null),
       );
       editSessionListener = setupEditSessionListeners(
         currentSession.value,
@@ -244,14 +284,14 @@ export function createSimpleEditorManager(app) {
 
       if (features) {
         await currentSession.value?.setCurrentFeatures(features);
-      } else if (newSession.type === SessionType.EDIT_GEOMETRY) {
+      } else if (isEditGeometrySession(newSession)) {
         newSession.setFeature(currentSession.value?.currentFeatures[0]);
       } else {
         newSession.setFeatures(currentSession.value?.currentFeatures);
       }
     } else {
-      editSessionStoppedListener = () => {};
-      editSessionListener = () => {};
+      editSessionStoppedListener = (): void => {};
+      editSessionListener = (): void => {};
     }
     currentEditSession.value = newSession;
   }
@@ -280,13 +320,13 @@ export function createSimpleEditorManager(app) {
     currentEditSession,
     currentFeatures,
     currentLayer,
-    startCreateSession(geometryType) {
+    startCreateSession(geometryType: GeometryType): void {
       if (
         !templateFeature?.getGeometry() ||
         geometryType !== templateFeature.getGeometry()?.getType()
       ) {
         let geometry;
-        const id = `drawing.create.${geometryType}`;
+        const id = `draw.create.${geometryType}`;
         // create dummy geomtery. Template feature must have geometry, otherwise property components can not recognize what type of feature will be drawn next.
         // alternative would be to pass through the geometry type (in e.g. styleComponent), but might be more errorprone and complex
         switch (geometryType) {
@@ -316,19 +356,20 @@ export function createSimpleEditorManager(app) {
         'propertychange',
         ({ key }) => {
           if (key === 'olcs_altitudeMode') {
-            session.featureAltitudeMode = templateFeature.get(key);
+            session.featureAltitudeMode = templateFeature?.get(key);
           }
         },
       );
-      session.stopped.addEventListener(() => {
+      const listener = session.stopped.addEventListener(() => {
         unByKey(templateFeatureListener);
+        listener();
       });
       setCurrentSession(session);
       currentFeatures.value = [templateFeature];
       app.maps.eventHandler.featureInteraction.pullPickedPosition = 0.05;
     },
-    startSelectSession(features) {
-      if (currentEditSession.value?.type !== SessionType.SELECT) {
+    startSelectSession(features?: Feature[] | Feature): void {
+      if (!isSelectSession(currentSession.value)) {
         setCurrentSession(
           startSelectFeaturesSession(
             app,
@@ -338,11 +379,19 @@ export function createSimpleEditorManager(app) {
           ),
         );
       }
+      assertIsSelectSession(currentSession.value);
       if (features) {
-        currentSession.value?.setCurrentFeatures(features);
+        currentSession.value
+          .setCurrentFeatures(features)
+          .catch((e: unknown) => {
+            getLogger(name).error(
+              'Error setting current features in select session',
+              e,
+            );
+          });
       }
     },
-    async startEditSession(feature) {
+    async startEditSession(feature: Feature): Promise<void> {
       await setCurrentEditSession(
         () =>
           startEditGeometrySession(
@@ -353,7 +402,10 @@ export function createSimpleEditorManager(app) {
         feature,
       );
     },
-    async startTransformSession(mode, features) {
+    async startTransformSession(
+      mode: TransformationMode,
+      features?: Feature[] | Feature,
+    ): Promise<void> {
       await setCurrentEditSession(
         () =>
           startEditFeaturesSession(
@@ -365,17 +417,17 @@ export function createSimpleEditorManager(app) {
         features,
       );
     },
-    async stop() {
+    async stop(): Promise<void> {
       setCurrentSession(null);
       await setCurrentEditSession(null);
     },
-    async stopEditing() {
+    async stopEditing(): Promise<void> {
       await setCurrentEditSession(null);
-      if (currentSession?.value?.type === SessionType.SELECT) {
+      if (isSelectSession(currentSession.value)) {
         currentSession.value.setMode(SelectionMode.MULTI);
       }
     },
-    async placeCurrentFeaturesOnTerrain() {
+    async placeCurrentFeaturesOnTerrain(): Promise<void> {
       // can't use placeGeometryOnTerrain from @vcmap/core since edit features handlers do not listen to geometry changes
       const map = app.maps.activeMap;
 
@@ -391,12 +443,12 @@ export function createSimpleEditorManager(app) {
           ) {
             const flats = getFlatCoordinateReferences(geometry);
             const groundFlats = structuredClone(flats);
-            const { terrainProvider } = map.getScene();
+            const { terrainProvider } = map.getScene()!;
             if (!terrainProvider || !terrainProvider.availability) {
               return 0;
             }
             await getHeightFromTerrainProvider(
-              terrainProvider,
+              terrainProvider as CesiumTerrainProvider,
               groundFlats,
               mercatorProjection,
               groundFlats,
@@ -412,13 +464,17 @@ export function createSimpleEditorManager(app) {
       const maxDiff = Math.max(...maxDiffs);
       if (Number.isFinite(maxDiff) && maxDiff !== 0) {
         this.startTransformSession(TransformationMode.TRANSLATE);
-        currentEditSession.value.translate(0, 0, maxDiff);
+        (currentEditSession.value as EditFeaturesSession).translate(
+          0,
+          0,
+          maxDiff,
+        );
       }
     },
-    getDefaultLayer() {
+    getDefaultLayer(): VectorLayer {
       return layer;
     },
-    destroy() {
+    destroy(): void {
       setCurrentSession(null);
       mapChangedListener();
       layerWatcher();

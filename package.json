@@ -16,7 +16,8 @@
     "lint": "npm run lint:js && npm run lint:prettier",
     "format": "prettier --write --list-different . && npm run lint:js -- --fix",
     "test": "vitest",
-    "coverage": "vitest run --coverage"
+    "coverage": "vitest run --coverage",
+    "type-check": "vue-tsc --noEmit"
   },
   "author": "Tobias Krauth <tkrauth@vc.systems>",
   "license": "MIT",
@@ -36,31 +37,33 @@
     ".": "./src/index.js",
     "./dist": "./dist/index.js"
   },
-  "overrides": {
-    "esbuild": "^0.25.0",
-    "@vcmap/core": "^6.3.0-rc.1",
-    "@vcmap/ui": "^6.3.0-rc.1"
-  },
   "prettier": "@vcsuite/eslint-config/prettier.js",
   "peerDependencies": {
     "@vcmap-cesium/engine": "^11.0.3",
-    "@vcmap/core": "^6.3.0-rc.1",
-    "@vcmap/ui": "^6.3.0-rc.1",
+    "@vcmap/core": "^6.3.0-rc.2",
+    "@vcmap/ui": "^6.3.0-rc.3",
     "ol": "^10.6.1",
     "vue": "~3.4.38",
     "vuetify": "~3.7.14"
   },
+  "overrides": {
+    "esbuild": "^0.25.0",
+    "@vcmap/core": "^6.3.0-rc.2",
+    "@vcmap/ui": "^6.3.0-rc.3"
+  },
   "devDependencies": {
-    "@vcmap/plugin-cli": "^4.1.3",
-    "@vcsuite/eslint-config": "^4.0.0",
+    "@vcmap/plugin-cli": "^4.1.6",
+    "@vcsuite/eslint-config": "^4.1.0",
     "@vitest/coverage-v8": "^2.1.9",
     "jest-canvas-mock": "^2.5.2",
     "jsdom": "^23.0.1",
     "resize-observer-polyfill": "^1.5.1",
-    "vitest": "^2.1.9"
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.9",
+    "vue-tsc": "^2.2.10"
   },
-  "mapVersion": "^6.3",
   "dependencies": {
     "@vcsuite/logger": "^1.0.1"
-  }
+  },
+  "mapVersion": "^6.3"
 }

@@ -1,31 +1,37 @@
-<script setup>
+<script setup lang="ts">
+  import type { VectorPropertiesOptions } from '@vcmap/core';
   import {
     AbstractConfigEditor,
     VcsFormSection,
     VcsLabel,
     VcsSelect,
   } from '@vcmap/ui';
+  import type { PropType } from 'vue';
   import { ref, toRaw } from 'vue';
   import { VContainer, VCol, VRow } from 'vuetify/components';
+  import type { DrawConfig } from './defaultOptions.js';
   import getDefaultOptions from './defaultOptions.js';
 
   const props = defineProps({
     getConfig: {
-      type: Function,
+      type: Function as PropType<() => DrawConfig>,
       required: true,
     },
     setConfig: {
-      type: Function,
+      type: Function as PropType<(config: object | undefined) => void>,
       required: true,
     },
   });
+  const config = props.getConfig();
+  const localConfig = ref({
+    ...getDefaultOptions(),
+    ...structuredClone(config),
+  });
 
-  const localConfig = ref({ ...getDefaultOptions(), ...props.getConfig() });
-
-  /**
-   * @type {{ value: import("@vcmap/core").VectorPropertiesOptions["altitudeMode"], title: string }}
-   */
-  const altitudeModes = [
+  const altitudeModes: {
+    value: VectorPropertiesOptions['altitudeMode'];
+    title: string;
+  }[] = [
     'clampToGround',
     'clampToTerrain',
     'clampTo3DTiles',
@@ -34,11 +40,11 @@
     'relativeToTerrain',
     'relativeTo3DTiles',
   ].map((value) => ({
-    value,
+    value: value as VectorPropertiesOptions['altitudeMode'],
     title: `components.vectorProperties.${value}`,
   }));
 
-  function apply() {
+  function apply(): void {
     props.setConfig(structuredClone(toRaw(localConfig.value)));
   }
 </script>
@@ -47,7 +53,7 @@
   <AbstractConfigEditor v-bind="{ ...$attrs, ...$props }" @submit="apply">
     <VcsFormSection
       v-if="localConfig"
-      heading="drawing.config.title"
+      heading="draw.config.title"
       expandable
       :start-open="true"
     >
@@ -55,7 +61,7 @@
         <v-row no-gutters>
           <v-col>
             <VcsLabel html-for="altitudeModes">
-              {{ $t('drawing.config.altitudeModes') }}
+              {{ $t('draw.config.altitudeModes') }}
             </VcsLabel>
           </v-col>
           <v-col>
