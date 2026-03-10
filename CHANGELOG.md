@@ -2,6 +2,7 @@
 
 - Refactor plugin code to TypeScript
 - Fixes an issue where drawing in panorama was allowed without depth information.
+- Fixes an issue where bbox would always be attribued the same number in MyWorkspace.
 
 # v5.0.0
 

@@ -29,7 +29,6 @@ import {
   getStyleOptions,
   PanoramaMap,
   getHeightFromTerrainProvider,
-  ObliqueMap,
 } from '@vcmap/core';
 import { Feature } from 'ol';
 import type { CesiumTerrainProvider } from '@vcmap-cesium/engine';
@@ -65,12 +64,6 @@ function createSimpleEditorLayer(app: VcsUiApp): VectorLayer {
   const layer = new VectorLayer({
     projection: mercatorProjection.toJSON(),
     zIndex: maxZIndex - 1,
-    mapNames: [
-      CesiumMap.className,
-      OpenlayersMap.className,
-      ObliqueMap.className,
-      PanoramaMap.className,
-    ],
   });
   markVolatile(layer);
   layer.activate().catch((e: unknown) => {

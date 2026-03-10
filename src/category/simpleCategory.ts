@@ -63,20 +63,20 @@ enum CategoryType {
   OBJECT = 3,
 }
 
-function setTitleOnFeature(feature: Feature, layer: VectorLayer): void {
+function getGeometryType(feature: Feature): string {
   const geometry = feature.getGeometry();
-  let typeName = 'Unknown';
-  if (geometry) {
-    typeName = geometry.get('_vcsGeomType') ?? geometry.getType();
-  }
+  return geometry?.get('_vcsGeomType') ?? geometry?.getType() ?? 'Unknown';
+}
 
+function setTitleOnFeature(feature: Feature, layer: VectorLayer): void {
+  const typeName = getGeometryType(feature);
   let featureName;
   let count = 0;
 
   const sameTypeFeaturesNames = new Set(
     layer
       .getFeatures()
-      .filter((f) => f.getGeometry()?.getType() === typeName)
+      .filter((f) => getGeometryType(f) === typeName)
       .map((f) => f.get('title')),
   );
 
